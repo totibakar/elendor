@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import CharacterCard from '../components/CharacterCard';
 import '../styles/MainMenu.css';
 
 const relics = [
@@ -63,10 +64,21 @@ const MainMenu = () => {
   const [selectedRelic, setSelectedRelic] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showCharacterDetails, setShowCharacterDetails] = useState(false);
+  const [flippedCard, setFlippedCard] = useState(false);
+  const [backgroundImage, setBackgroundImage] = useState('');
+  const [isChanging, setIsChanging] = useState(false);
+  const [slideDirection, setSlideDirection] = useState('');
+  const [isAnimating, setIsAnimating] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef(null);
 
   useEffect(() => {
+    // Set initial background based on current time
+    const hours = new Date().getHours();
+    setBackgroundImage(hours >= 6 && hours < 18 ? '/assets/map/Elendor.png' : '/assets/map/ElendorNight.png');
+
     // Loading animation
     const progressInterval = setInterval(() => {
       setLoadingProgress(prev => {
@@ -94,7 +106,20 @@ const MainMenu = () => {
 
   useEffect(() => {
     const clockTimer = setInterval(() => {
-      setCurrentTime(new Date());
+      const newTime = new Date();
+      setCurrentTime(newTime);
+      
+      // Update background based on time
+      const hours = newTime.getHours();
+      const minutes = newTime.getMinutes();
+      const seconds = newTime.getSeconds();
+      
+      // Check for day/night transition
+      if ((hours === 6 && minutes === 0 && seconds === 0) || 
+          (hours === 18 && minutes === 0 && seconds === 0)) {
+        const newBackground = hours === 6 ? '/assets/map/Elendor.png' : '/assets/map/ElendorNight.png';
+        setBackgroundImage(newBackground);
+      }
     }, 1000);
 
     return () => clearInterval(clockTimer);
@@ -121,6 +146,51 @@ const MainMenu = () => {
       second: '2-digit',
       hour12: true
     });
+  };
+
+  const handlePrevCharacter = () => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+    setSlideDirection('slide-out-right');
+    
+    setTimeout(() => {
+      setSelectedCharacter((prev) => (prev - 1 + characters.length) % characters.length);
+      setSlideDirection('slide-in-right');
+      
+      setTimeout(() => {
+        setSlideDirection('');
+        setIsAnimating(false);
+      }, 300);
+    }, 300);
+  };
+
+  const handleNextCharacter = () => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+    setSlideDirection('slide-out-left');
+    
+    setTimeout(() => {
+      setSelectedCharacter((prev) => (prev + 1) % characters.length);
+      setSlideDirection('slide-in-left');
+      
+      setTimeout(() => {
+        setSlideDirection('');
+        setIsAnimating(false);
+      }, 300);
+    }, 300);
+  };
+
+  const handleCardFlip = (isFlipped) => {
+    setFlippedCard(isFlipped);
+  };
+
+  const handleCharacterSelect = () => {
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmCharacter = () => {
+    setShowConfirmation(false);
+    setShowCharacterDetails(true);
   };
 
   const handleStartGame = () => {
@@ -233,7 +303,13 @@ const MainMenu = () => {
   ];
 
   return (
-    <div>
+    <div 
+      className="main-menu-container" 
+      style={{ 
+        backgroundImage: `url(${backgroundImage})`,
+        backgroundColor: '#000' // Fallback color while image loads
+      }}
+    >
       {isLoading ? (
         <div className="loading-screen">
           <div className="loading-content">
@@ -292,9 +368,34 @@ const MainMenu = () => {
             {formatTime(currentTime)}
           </div>
 
-          <div className="image-container">
-            <img src="/assets/Room.png" alt="Room" />
-          </div>
+          {!showCharacterDetails && (
+            <>
+              <h1 className="selection-title">Choose Your Hero</h1>
+              <div className="floating-card-container">
+                <button 
+                  className="nav-button" 
+                  onClick={handlePrevCharacter}
+                  disabled={isAnimating}
+                >
+                  <img src="/assets/Prevbtn.png" alt="Previous" />
+                </button>
+                
+                <CharacterCard
+                  character={characters[selectedCharacter]}
+                  onClick={handleCharacterSelect}
+                  className={slideDirection}
+                />
+
+                <button 
+                  className="nav-button" 
+                  onClick={handleNextCharacter}
+                  disabled={isAnimating}
+                >
+                  <img src="/assets/Nextbtn.png" alt="Next" />
+                </button>
+              </div>
+            </>
+          )}
 
           {showRules && (
             <div className="rules-box show">
@@ -359,36 +460,23 @@ const MainMenu = () => {
             </div>
           )}
 
-          <div className="character-wrapper">
-            <h1 className="selection-title">Choose Your Hero</h1>
-            <div className="character-selection-container">
-              <div className="character-preview">
-                <div className="character-selection">
-                  <button id="upBtn"
-                    onClick={() => setSelectedCharacter((prev) => (prev - 1 + characters.length) % characters.length)}
-                  >
-                    <img src="/assets/Prevbtn.png" alt="Previous" className="arrow-icon rotate-90" />
-                  </button>
-                  
-                  <div className="slider-container vertical">
-                    <div className="slider" style={{ transform: `translateY(-${selectedCharacter * 150}px)` }}>
-                      {characters.map((char, index) => (
-                        <div key={index} className="character-slot">
-                          <img src={char.image} alt={char.name} className="character" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button id="downBtn"
-                    onClick={() => setSelectedCharacter((prev) => (prev + 1) % characters.length)}
-                  >
-                    <img src="/assets/Nextbtn.png" alt="Next" className="arrow-icon rotate-90" />
-                  </button>
+          {showConfirmation && (
+            <div className="confirmation-popup show">
+              <div className="confirmation-content">
+                <h2 className="confirmation-title">Choose {characters[selectedCharacter].name}?</h2>
+                <p>Are you sure you want to embark on your journey as a {characters[selectedCharacter].name}?</p>
+                <div className="confirmation-buttons">
+                  <button className="confirm-btn" onClick={handleConfirmCharacter}>Yes, I'm sure</button>
+                  <button className="cancel-btn" onClick={() => setShowConfirmation(false)}>No, go back</button>
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className="character-details">
+          {showCharacterDetails && (
+            <>
+              <div className="character-details-backdrop show" />
+              <div className="character-details-expanded show">
                 <div className="character-header">
                   <h2 className="character-name">{characters[selectedCharacter].name}</h2>
                   <p className="character-description">{characters[selectedCharacter].description}</p>
@@ -446,33 +534,33 @@ const MainMenu = () => {
                     <p className="bonus-description">{characters[selectedCharacter].bonus.description}</p>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="input-container">
-              <label htmlFor="playerName" className="input-label">Enter Your Name, Hero</label>
-              <input 
-                type="text" 
-                id="playerName"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Type your name here..."
-                className={!playerName.trim() ? 'empty' : ''}
-              />
-              <button 
-                id="startBtn" 
-                type="submit" 
-                onClick={handleStartGame}
-                disabled={!playerName.trim()}
-                className={!playerName.trim() ? 'disabled' : ''}
-              >
-                <b>Start Your Journey!</b>
-              </button>
-              {!playerName.trim() && (
-                <p className="input-warning">Please enter your name to begin the adventure</p>
-              )}
-            </div>
-          </div>
+                <div className="input-container">
+                  <label htmlFor="playerName" className="input-label">Enter Your Name, Hero</label>
+                  <input 
+                    type="text" 
+                    id="playerName"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    placeholder="Type your name here..."
+                    className={!playerName.trim() ? 'empty' : ''}
+                  />
+                  <button 
+                    id="startBtn" 
+                    type="submit" 
+                    onClick={handleStartGame}
+                    disabled={!playerName.trim()}
+                    className={!playerName.trim() ? 'disabled' : ''}
+                  >
+                    <b>Start Your Journey!</b>
+                  </button>
+                  {!playerName.trim() && (
+                    <p className="input-warning">Please enter your name to begin the adventure</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
