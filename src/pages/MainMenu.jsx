@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CharacterCard from '../components/CharacterCard';
 import '../styles/MainMenu.css';
+import { useGame } from '../context/GameContext';
 
 const relics = [
   {
@@ -55,6 +56,7 @@ const relics = [
 ];
 
 const MainMenu = () => {
+  const { setPlayerName: setGamePlayerName, setSelectedCharacter: setGameCharacter, setCharacterStats } = useGame();
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [showRules, setShowRules] = useState(false);
@@ -198,6 +200,7 @@ const MainMenu = () => {
       const selectedChar = characters[selectedCharacter];
       const initialStats = { ...selectedChar.stats };
 
+      // Apply character bonus
       switch (selectedChar.bonus.effect) {
         case 'hp':
           initialStats.hp += selectedChar.bonus.value;
@@ -212,10 +215,13 @@ const MainMenu = () => {
           break;
       }
 
-      localStorage.setItem('playerName', playerName);
-      localStorage.setItem('characterClass', selectedChar.name);
-      localStorage.setItem('initialStats', JSON.stringify(initialStats));
-      navigate('/arena');
+      // Update game context
+      setGamePlayerName(playerName);
+      setGameCharacter(selectedChar);
+      setCharacterStats(initialStats);
+
+      // Navigate to world
+      navigate('/world');
     }
   };
 
@@ -314,7 +320,6 @@ const MainMenu = () => {
         <div className="loading-screen">
           <div className="loading-content">
             <h1 className="loading-title">Elendor</h1>
-            <h2 className="loading-subtitle">Jejak Relik Nusantara</h2>
             <div className="loading-progress">
               <div className="loading-bar-container">
                 <div className="loading-line"></div>
@@ -324,12 +329,12 @@ const MainMenu = () => {
             </div>
             <div className="loading-tips">
               <p className="tip-text">
-                {loadingProgress < 33 && "Memuat aset game..."}
-                {loadingProgress >= 33 && loadingProgress < 66 && "Menyiapkan dunia Elendor..."}
-                {loadingProgress >= 66 && "Mengumpulkan relik kuno..."}
+                {loadingProgress < 33 && "Loading game assets..."}
+                {loadingProgress >= 33 && loadingProgress < 66 && "Preparing world of Elendor..."}
+                {loadingProgress >= 66 && "Gathering ancient relics..."}
               </p>
             </div>
-            <h3 className="loading-credits">Made by Group 9</h3>
+            <h3 className="loading-credits">Made by R.E.P.O</h3>
             <audio id="introAudio" src="/assets/sound/temp.mp3"></audio>
           </div>
           <div className="loading-decoration">

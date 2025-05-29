@@ -1,18 +1,21 @@
 import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import MainMenu from './pages/MainMenu.jsx';
-import Arena from './pages/Arena.jsx';
-import Combat from './pages/Combat.jsx';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import MainMenu from './pages/MainMenu';
+import World from './pages/World';
+import { GameProvider } from './context/GameContext';
+import './App.css';
 
 function App() {
   return (
+    <GameProvider>
     <Router>
       <Routes>
         <Route path="/" element={<MainMenu />} />
-        <Route path="/arena" element={<Arena />} />
-        <Route path="/combat" element={<Combat />} />
+          <Route path="world" element={<World />} />
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>
+    </GameProvider>
   );
 }
 
