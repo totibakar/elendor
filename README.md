@@ -3,6 +3,7 @@ Group members: <br/>
 • Tito Shafy - 00000127746 <br/>
 • Muhamad Altha Rasjid - 00000136220 <br/>
 • Dylan Wilson - 00000134282 <br/>
+• Andy Edlynson Kadiran - 00000115200 <br/>
 
 ---RULES---<br/>
 • 1 minute in-game means 1 second in real life.<br/>
