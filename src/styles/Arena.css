@@ -1,0 +1,259 @@
+/* Game Header */
+#gameHeader {
+  text-align: center;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-family: 'MedievalSharp', cursive;
+}
+
+#gameHeader h1 {
+  margin: 0;
+  font-size: 1.5em;
+}
+
+/* Game Container */
+#gameContainer {
+  display: flex;
+  height: calc(100vh - 60px);
+  position: relative;
+  overflow: hidden;
+}
+
+#game-display-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+#gameArea {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background-color: #000;
+}
+
+/* Status Bars */
+#hp-hunger-frame {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 200px;
+}
+
+#hp-bar, #hunger-bar {
+  height: 20px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+#hp-bar {
+  background-color: #ff4444;
+}
+
+#hunger-bar {
+  background-color: #4CAF50;
+}
+
+#stamina-frame {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  width: 200px;
+}
+
+#stamina-bar {
+  height: 20px;
+  background-color: #2196F3;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* Player Stats */
+#player-gold {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 4px;
+  color: gold;
+  font-family: 'MedievalSharp', cursive;
+}
+
+#game-time {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 4px;
+  color: white;
+  font-family: 'MedievalSharp', cursive;
+}
+
+/* Relic Display */
+#relic-display {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.relic-slot {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: opacity 0.3s ease;
+}
+
+/* UI Panel */
+#uiPanel {
+  width: 300px;
+  background-color: rgba(0, 0, 0, 0.8);
+  padding: 20px;
+  color: white;
+  font-family: 'MedievalSharp', cursive;
+}
+
+#pads-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pad-container {
+  text-align: center;
+}
+
+.pad-label {
+  margin-bottom: 10px;
+  font-size: 1.2em;
+}
+
+.dpad-button {
+  width: 50px;
+  height: 50px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid #fff;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.dpad-button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.dpad-middle-row {
+  display: flex;
+  justify-content: center;
+  gap: 50px;
+  margin: 10px 0;
+}
+
+.action-button {
+  font-family: 'MedievalSharp', cursive;
+  font-size: 16px;
+}
+
+/* Pause Menu */
+#pause-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+#pause-content {
+  background-color: rgba(0, 0, 0, 0.9);
+  padding: 30px;
+  border-radius: 10px;
+  color: white;
+  font-family: 'MedievalSharp', cursive;
+  min-width: 300px;
+}
+
+#pause-content h3 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.volume-controls {
+  margin-bottom: 20px;
+}
+
+.volume-slider {
+  margin-bottom: 10px;
+}
+
+.volume-slider label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.volume-slider input {
+  width: 100%;
+}
+
+#pause-options {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#pause-options li {
+  padding: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+#pause-options li:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Global Styles */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #000;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  #gameContainer {
+    flex-direction: column;
+  }
+
+  #uiPanel {
+    width: 100%;
+    height: auto;
+  }
+
+  #pads-container {
+    flex-direction: row;
+    justify-content: space-around;
+  }
+} 
