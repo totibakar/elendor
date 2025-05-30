@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import CharacterCard from '../components/CharacterCard';
 import '../styles/MainMenu.css';
 import { useGame } from '../context/GameContext';
+import styled from 'styled-components';
 
 const relics = [
   {
@@ -54,6 +55,46 @@ const relics = [
     description: 'The Gunungan is a symbolic element in Wayang (shadow puppet) performances from Indonesia, especially Java and Bali. It represents the beginning and end of a story, and serves as a divider between scenes or worlds — the spiritual and the physical.'
   }
 ];
+
+const CharacterDetailsExpanded = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.65);
+  background: rgba(44, 24, 16, 0.95);
+  border: 4px solid #8b4513;
+  border-radius: 15px;
+  padding: 50px 30px 30px;
+  color: #ffd700;
+  z-index: 1000;
+  min-width: 600px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  
+  &.show {
+    opacity: 1;
+  }
+`;
+
+const BackButton = styled.button`
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: #2c1810;
+  color: #ffd700;
+  border: 2px solid #8b4513;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'MedievalSharp', cursive;
+  z-index: 1001;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: #3d2315;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+  }
+`;
 
 const MainMenu = () => {
   const { setPlayerName: setGamePlayerName, setSelectedCharacter: setGameCharacter, setCharacterStats } = useGame();
@@ -288,7 +329,7 @@ const MainMenu = () => {
     },
     { 
       name: 'Soldier', 
-      image: '/assets/soldier/idle/idle5.png',
+      image: '/assets/SoldierPC/SoldierIdle/idle5.png',
       description: 'A disciplined warrior trained in the Royal Army of Elendor. Well-balanced in combat with strong defensive capabilities. Excellent endurance and tactical knowledge make them reliable in extended missions.',
       stats: {
         hp: 90,
@@ -481,7 +522,13 @@ const MainMenu = () => {
           {showCharacterDetails && (
             <>
               <div className="character-details-backdrop show" />
-              <div className="character-details-expanded show">
+              <CharacterDetailsExpanded className="show">
+                <BackButton onClick={() => {
+                  setShowCharacterDetails(false);
+                  setShowConfirmation(false);
+                }}>
+                  ← Back
+                </BackButton>
                 <div className="character-header">
                   <h2 className="character-name">{characters[selectedCharacter].name}</h2>
                   <p className="character-description">{characters[selectedCharacter].description}</p>
@@ -563,7 +610,7 @@ const MainMenu = () => {
                     <p className="input-warning">Please enter your name to begin the adventure</p>
                   )}
                 </div>
-              </div>
+              </CharacterDetailsExpanded>
             </>
           )}
         </>

@@ -1,0 +1,112 @@
+# Elendor Game - Implemented Features
+
+## Character System
+1. Character Selection
+   - Three unique character classes: Mage, Mercenary, and Ranger
+   - Each class has unique stats and bonuses
+   - Visual character preview with animation
+   - Character stats display: HP, Hunger, Stamina, Attack, Speed, Armor, Gold
+   - Special trait system unique to each class
+
+2. Character Movement
+   - Smooth 4-directional movement (up, down, left, right)
+   - Pixel-perfect sprite animations
+   - Multiple animation states: idle, walk, run
+   - Long idle animation when character is stationary
+   - Character size: 24x32 pixels
+   - Base movement speed: 2.25
+
+## Game UI
+1. Main Menu
+   - Character selection carousel
+   - Player name input
+   - Day/night cycle visualization
+   - Clock display
+   - Game rules section
+   - Relics information section
+
+2. World Interface
+   - Stats panel showing HP, Hunger, and Stamina bars
+   - Detailed stats panel with equipment information
+   - Inventory system with grid layout
+   - Character preview in inventory
+   - Control panel with D-pad and action buttons
+   - Pause menu with resume, restart, and exit options
+
+## Movement and Controls
+1. Basic Controls
+   - WASD or Arrow keys for movement
+   - Shift key for running
+   - R key to toggle run mode
+   - E key for interaction
+   - I key for inventory
+   - S key for stats
+   - M key for map
+   - ESC key for pause menu
+
+2. Running System
+   - Toggle or hold Shift for running
+   - 1.6x movement speed while running
+   - Stamina consumption during running
+   - Automatic walk when stamina depleted
+   - Stamina regeneration when walking/idle
+
+## Stats System
+1. Character Stats
+   - Health Points (HP)
+   - Hunger level
+   - Stamina system
+   - Damage stats
+   - Armor rating
+   - Movement speed
+   - Gold amount
+
+2. Dynamic Stats
+   - Stamina drain rate: 5 points per second while running
+   - Stamina regen rate: 3 points per second while not running
+   - Hunger decrease rate: 0.75 points per 30 seconds
+   - Stats persistence across game sessions
+
+## Location Marking System
+1. Marker Tools
+   - Toggle button for marking mode
+   - Location type selection (shop, inn, quest, dungeon)
+   - Custom location naming
+   - Area shape options: circle, square, rounded square
+   - Size adjustment: 16px to 128px
+   - Coordinate display when marking
+
+2. Marker Management
+   - Click to place markers
+   - Click markers to remove them
+   - Export markers to JSON
+   - Clear all markers option
+   - Color coding based on location type
+   - Visual differentiation based on shape selection
+
+## Data Persistence
+1. Local Storage
+   - Player name persistence
+   - Selected character data
+   - Character stats
+   - Automatic data saving
+   - Data clearing on logout
+
+2. Game State Management
+   - React Context for state management
+   - Automatic state recovery after page refresh
+   - Clean state reset when exiting to main menu
+
+## Map System
+1. Map Features
+   - Large scrollable game world
+   - Day/night cycle visualization
+   - Interactive areas marking
+   - Character position tracking
+   - Coordinate system
+
+2. Visual Elements
+   - Custom styled borders
+   - Medieval theme consistency
+   - Responsive layout
+   - Smooth transitions and animations 

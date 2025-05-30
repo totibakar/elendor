@@ -66,17 +66,32 @@ const Map = styled.div`
   position: relative;
   width: 100%;
   height: 100%;
-  background-image: url('/assets/map/Elendor.png');
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
   transform-origin: center;
+  transition: opacity 2s ease-in-out;
+`;
+
+const DayNightOverlay = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: ${props => props.isNight ? 1 : 0};
+  transition: opacity 2s ease-in-out;
+  z-index: 1;
+  pointer-events: none;
 `;
 
 const Character = styled.div`
   position: absolute;
-  width: 24px;  // Changed from 32px to 24px
-  height: 32px; // Maintained 32px height
+  width: 18px;
+  height: 24px;
   background-size: 100% 100%;
   background-repeat: no-repeat;
   background-position: center;
@@ -374,6 +389,19 @@ const StatBar = styled.div`
   }
 `;
 
+const TimeDisplay = styled.div`
+  color: #ffd700;
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: 15px;
+  font-family: 'MedievalSharp', cursive;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid #8b4513;
+`;
+
 const ActionButtons = styled.div`
   position: absolute;
   right: 20px;
@@ -660,13 +688,76 @@ const MarkerTools = styled.div`
   left: 10px;
   background: rgba(44, 24, 16, 0.9);
   border: 2px solid #8b4513;
-  padding: 10px;
+  padding: 15px;
   border-radius: 4px;
   z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 200px;
+  gap: 15px;
+  min-width: 250px;
+`;
+
+const ToolSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const ToolLabel = styled.label`
+  color: #ffd700;
+  font-size: 14px;
+  margin-bottom: 4px;
+`;
+
+const Select = styled.select`
+  padding: 5px;
+  background: #2c1810;
+  color: #ffd700;
+  border: 1px solid #8b4513;
+  border-radius: 4px;
+  
+  &:focus {
+    outline: none;
+    border-color: #ffd700;
+  }
+`;
+
+const Input = styled.input`
+  padding: 5px;
+  background: #2c1810;
+  color: #ffd700;
+  border: 1px solid #8b4513;
+  border-radius: 4px;
+  
+  &:focus {
+    outline: none;
+    border-color: #ffd700;
+  }
+
+  &[type="range"] {
+    width: 100%;
+    height: 8px;
+    -webkit-appearance: none;
+    background: #2c1810;
+    border: 1px solid #8b4513;
+    border-radius: 4px;
+    
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #ffd700;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+  }
+`;
+
+const SizeDisplay = styled.div`
+  color: #ffd700;
+  font-size: 12px;
+  text-align: right;
+  margin-top: 4px;
 `;
 
 const CoordinateDisplay = styled.div`
@@ -684,17 +775,17 @@ const CoordinateDisplay = styled.div`
 
 const LocationMarker = styled.div`
   position: absolute;
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 215, 0, 0.3);
-  border: 2px solid #ffd700;
-  border-radius: 50%;
+  width: ${props => props.size}px;
+  height: ${props => props.size}px;
+  background: ${props => props.background || 'rgba(255, 215, 0, 0.3)'};
+  border: 2px solid ${props => props.borderColor || '#ffd700'};
+  border-radius: ${props => props.shape === 'circle' ? '50%' : props.shape === 'square' ? '0' : '8px'};
   transform: translate(-50%, -50%);
   cursor: pointer;
   z-index: 5;
   
   &:hover {
-    background: rgba(255, 215, 0, 0.5);
+    background: ${props => props.background ? props.background.replace('0.3', '0.5') : 'rgba(255, 215, 0, 0.5)'};
   }
 
   &::after {
@@ -753,7 +844,7 @@ const ClearButton = styled.button`
 `;
 
 const World = () => {
-  const { selectedCharacter, characterStats, playerName } = useGame();
+  const { selectedCharacter, characterStats, playerName, clearGameData } = useGame();
   const navigate = useNavigate();
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [direction, setDirection] = useState('down');
@@ -766,12 +857,14 @@ const World = () => {
   const [runFrame, setRunFrame] = useState(0);
   const walkTimer = useRef(null);
   const runTimer = useRef(null);
+  const [gameTime, setGameTime] = useState({ hours: 6, minutes: 0 }); // Start at 6:00
+  const gameTimeRef = useRef(null);
   
   const characterRef = useRef(null);
   const mapRef = useRef(null);
   const keysPressed = useRef({});
   
-  const BASE_MOVEMENT_SPEED = 2.25; // Adjusted for new sprite size (24x32)
+  const BASE_MOVEMENT_SPEED = 1.75; // Adjusted for new sprite size (18x24)
   const [loadedSprites, setLoadedSprites] = useState(new Set());
   const spriteCacheRef = useRef({});
   const [isLongIdle, setIsLongIdle] = useState(false);
@@ -801,6 +894,9 @@ const World = () => {
   const [devMarkers, setDevMarkers] = useState([]);
   const [selectedMarkerType, setSelectedMarkerType] = useState('shop');
   const [markerName, setMarkerName] = useState('');
+  const [markerSize, setMarkerSize] = useState(32);
+  const [markerShape, setMarkerShape] = useState('circle');
+  const [isNight, setIsNight] = useState(false);
 
   const markerTypes = {
     shop: { label: 'Shop', color: '#ffd700' },
@@ -830,12 +926,14 @@ const World = () => {
         x,
         y,
         type: selectedMarkerType,
-        name: markerName
+        name: markerName,
+        size: markerSize,
+        shape: markerShape
       };
       setMarkers(prev => [...prev, newMarker]);
       setMarkerName('');
     }
-  }, [isMarkingMode, selectedMarkerType, markerName]);
+  }, [isMarkingMode, selectedMarkerType, markerName, markerSize, markerShape]);
 
   const removeMarker = (markerId) => {
     setMarkers(prev => prev.filter(marker => marker.id !== markerId));
@@ -1071,6 +1169,7 @@ const World = () => {
 
   // Handle exit to main menu
   const handleExitToMainMenu = () => {
+    clearGameData();
     navigate('/');
   };
 
@@ -1294,6 +1393,43 @@ const World = () => {
     // Add item handling logic here
   };
 
+  // Add game time effect
+  useEffect(() => {
+    if (gameTimeRef.current) {
+      clearInterval(gameTimeRef.current);
+    }
+
+    // Update game time every 3 seconds (1 in-game minute)
+    gameTimeRef.current = setInterval(() => {
+      if (!isPaused) {
+        setGameTime(prevTime => {
+          const newMinutes = prevTime.minutes + 1;
+          if (newMinutes >= 60) {
+            const newHours = (prevTime.hours + 1) % 24;
+            return { hours: newHours, minutes: 0 };
+          }
+          return { ...prevTime, minutes: newMinutes };
+        });
+      }
+    }, 3000); // 3 seconds real time = 1 minute game time
+
+    return () => {
+      if (gameTimeRef.current) {
+        clearInterval(gameTimeRef.current);
+      }
+    };
+  }, [isPaused]);
+
+  // Add effect to handle day/night transition
+  useEffect(() => {
+    const checkDayNight = () => {
+      const isNightTime = gameTime.hours >= 18 || gameTime.hours < 6;
+      setIsNight(isNightTime);
+    };
+    
+    checkDayNight();
+  }, [gameTime.hours]);
+
   if (!selectedCharacter) {
     return <WorldContainer>Loading...</WorldContainer>;
   }
@@ -1326,32 +1462,52 @@ const World = () => {
 
           {isMarkingMode && (
             <MarkerTools>
-              <select 
-                value={selectedMarkerType}
-                onChange={(e) => setSelectedMarkerType(e.target.value)}
-                style={{
-                  padding: '5px',
-                  background: '#2c1810',
-                  color: '#ffd700',
-                  border: '1px solid #8b4513'
-                }}
-              >
-                {Object.entries(markerTypes).map(([value, { label }]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={markerName}
-                onChange={(e) => setMarkerName(e.target.value)}
-                placeholder="Location name"
-                style={{
-                  padding: '5px',
-                  background: '#2c1810',
-                  color: '#ffd700',
-                  border: '1px solid #8b4513'
-                }}
-              />
+              <ToolSection>
+                <ToolLabel>Location Type</ToolLabel>
+                <Select 
+                  value={selectedMarkerType}
+                  onChange={(e) => setSelectedMarkerType(e.target.value)}
+                >
+                  {Object.entries(markerTypes).map(([value, { label }]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </Select>
+              </ToolSection>
+
+              <ToolSection>
+                <ToolLabel>Location Name</ToolLabel>
+                <Input
+                  type="text"
+                  value={markerName}
+                  onChange={(e) => setMarkerName(e.target.value)}
+                  placeholder="Enter location name"
+                />
+              </ToolSection>
+
+              <ToolSection>
+                <ToolLabel>Area Shape</ToolLabel>
+                <Select
+                  value={markerShape}
+                  onChange={(e) => setMarkerShape(e.target.value)}
+                >
+                  <option value="circle">Circle</option>
+                  <option value="square">Square</option>
+                  <option value="rounded">Rounded Square</option>
+                </Select>
+              </ToolSection>
+
+              <ToolSection>
+                <ToolLabel>Area Size</ToolLabel>
+                <Input
+                  type="range"
+                  min="16"
+                  max="128"
+                  value={markerSize}
+                  onChange={(e) => setMarkerSize(Number(e.target.value))}
+                />
+                <SizeDisplay>{markerSize}px</SizeDisplay>
+              </ToolSection>
+
               <div style={{ color: '#ffd700', fontSize: '12px', marginTop: '10px' }}>
                 • Click marker to remove it
               </div>
@@ -1366,7 +1522,11 @@ const World = () => {
             onMouseMove={handleMouseMove}
             onClick={handleMapClick}
           >
-            <Map>
+            <Map style={{ backgroundImage: `url('/assets/map/Elendor.png')` }}>
+              <DayNightOverlay 
+                isNight={isNight}
+                style={{ backgroundImage: `url('/assets/map/ElendorNight.png')` }}
+              />
               <Character
                 ref={characterRef}
                 x={position.x}
@@ -1385,6 +1545,8 @@ const World = () => {
                     background: `${markerTypes[marker.type].color}40`,
                     borderColor: markerTypes[marker.type].color
                   }}
+                  size={marker.size || 32}
+                  shape={marker.shape || 'circle'}
                   label={marker.name}
                   onClick={() => isMarkingMode && removeMarker(marker.id)}
                 />
@@ -1401,6 +1563,9 @@ const World = () => {
         
         <UIContainer>
           <StatsPanel>
+            <TimeDisplay>
+              {String(gameTime.hours).padStart(2, '0')}:{String(gameTime.minutes).padStart(2, '0')}
+            </TimeDisplay>
             <div>
               <div>HP</div>
               <StatBar value={(currentStats.hp / 100) * 100} color="#ff4444" />
