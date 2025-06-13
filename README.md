@@ -151,6 +151,6 @@ Group members: <br/>
 • Tito Shafy - 00000127746 <br/>
 • Muhamad Altha Rasjid - 00000136220 <br/>
 • Dylan Wilson - 00000134282 <br/>
-• 00000115200 - Andy Edlynson Kadiran <br/>
+• Andy Edlynson Kadiran - 00000115200 <br/>
 
 https://github.com/totibakar/elendor
