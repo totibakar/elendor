@@ -5,6 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { collisionManager } from '../utils/CollisionManager';
 import { spawnManager } from '../utils/SpawnManager';
 import { locationManager } from '../utils/LocationManager';
+import QuestDialog from '../components/QuestDialog';
+import SaveLoadMenu from '../components/SaveLoadMenu';
+import PauseMenu from '../components/PauseMenu';
 
 // Constants
 const MAP_DIMENSIONS = {
@@ -887,106 +890,13 @@ const PauseOverlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(5px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-`;
-
-const PauseMenu = styled.div`
-  position: relative;
-  width: 400px;
-  background: url('/assets/ui/scroll.png'), #2c1810;
-  background-size: cover;
-  border: 4px solid #8b4513;
-  border-radius: 15px;
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  animation: floatIn 0.3s ease-out;
-  box-shadow: 0 0 30px rgba(139, 69, 19, 0.5);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -20px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 80px;
-    height: 80px;
-    background: url('/assets/ui/seal.png') no-repeat center;
-    background-size: contain;
-  }
-
-  @keyframes floatIn {
-    from {
-      transform: translateY(-20px);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-`;
-
-const PauseTitle = styled.h2`
-  color: #ffd700;
-  font-family: 'MedievalSharp', cursive;
-  font-size: 36px;
-  text-align: center;
-  margin: 0 0 20px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-  letter-spacing: 2px;
-`;
-
-const PauseButton = styled.button`
   width: 100%;
-  padding: 15px;
-  background: linear-gradient(to bottom, #8b4513, #5c2d0e);
-  border: 2px solid #ffd700;
-  border-radius: 8px;
-  color: #ffd700;
-  font-family: 'MedievalSharp', cursive;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  overflow: hidden;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-
-  &:hover {
-    transform: scale(1.05);
-    background: linear-gradient(to bottom, #a25616, #6d3610);
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(circle, rgba(255, 215, 0, 0.1) 0%, transparent 70%);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-
-  &:hover::before {
-    opacity: 1;
-  }
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 998;
 `;
+
+
 
 const InventoryPanel = styled.div`
   position: relative;
@@ -1588,6 +1498,53 @@ const PopupButton = styled.button`
   }
 `;
 
+const GameCompletionPopup = styled.div`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(44, 24, 16, 0.95);
+  border: 4px solid #ffd700;
+  padding: 30px;
+  border-radius: 15px;
+  color: #ffd700;
+  text-align: center;
+  z-index: 2000;
+  box-shadow: 0 0 50px rgba(255, 215, 0, 0.3);
+  max-width: 600px;
+  width: 90%;
+`;
+
+const GameCompletionTitle = styled.h2`
+  font-size: 32px;
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+`;
+
+const GameCompletionText = styled.p`
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: #d4af37;
+  line-height: 1.6;
+`;
+
+const GameCompletionButton = styled.button`
+  background: rgba(139, 69, 19, 0.3);
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  padding: 10px 20px;
+  font-size: 18px;
+  cursor: pointer;
+  margin-top: 20px;
+  transition: all 0.3s ease;
+  border-radius: 5px;
+
+  &:hover {
+    background: rgba(139, 69, 19, 0.5);
+    transform: scale(1.05);
+  }
+`;
+
 const World = () => {
   const { selectedCharacter, characterStats, playerName, clearGameData } = useGame();
   const navigate = useNavigate();
@@ -1665,6 +1622,7 @@ const World = () => {
   const [dialogContent, setDialogContent] = useState(null);
   const [purchaseInProgress, setPurchaseInProgress] = useState(false);
   const [purchaseMessage, setPurchaseMessage] = useState('');
+  const [showQuest, setShowQuest] = useState(false);
 
   // Add loading state
   const [isLoading, setIsLoading] = useState(true);
@@ -1683,6 +1641,12 @@ const World = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [isRunToggled, setIsRunToggled] = useState(false);
   const [showDetailedStats, setShowDetailedStats] = useState(false);
+
+  const [useItemMessage, setUseItemMessage] = useState('');
+  const [showGameCompletion, setShowGameCompletion] = useState(false);
+
+  // Add new state for save/load menu
+  const [showSaveLoadMenu, setShowSaveLoadMenu] = useState(false);
 
   // Function to check if an item can be equipped in a slot
   const canEquipInSlot = (item, slotName) => {
@@ -2130,6 +2094,9 @@ const World = () => {
   // Handle pause/unpause
   const togglePause = () => {
     setIsPaused(prev => !prev);
+    if (!isPaused) {
+      setShowSaveLoadMenu(false);
+    }
   };
 
   // Handle restart
@@ -2150,7 +2117,6 @@ const World = () => {
   // Handle exit to main menu
   const handleExitToMainMenu = () => {
     clearGameData();
-    // The next time the game starts, it will use a new spawn point
     navigate('/');
   };
 
@@ -2206,6 +2172,27 @@ const World = () => {
       }
       if (e.key.toLowerCase() === 'e') {
         handleInteract();
+      }
+      // Cheat code: Press 'P' to get all relics
+      if (e.key.toLowerCase() === 'p') {
+        const relicNames = [
+          'Majapahit Relic',
+          'Kutai Relic',
+          'Sriwijaya Relic',
+          'Mataram Kuno Relic',
+          'Samudra Pasai Relic',
+          'Demak Relic',
+          'Mataram Islam Relic',
+          'Gowa-Tallo Relic'
+        ];
+        setObtainedRelics(Array(8).fill(true));
+        setCharacterStats(prev => ({
+          ...prev,
+          relics: [...relicNames]
+        }));
+        // Show a message that cheats are activated
+        setUseItemMessage('🎮 Cheat Activated: All Relics Obtained!');
+        setTimeout(() => setUseItemMessage(''), 3000);
       }
     };
 
@@ -2718,6 +2705,15 @@ const World = () => {
               farewell: "Semoga Anda menikmati kunjungan di kota kami!"
             });
           }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
         }
       ]
     },
@@ -2780,92 +2776,527 @@ const World = () => {
               farewell: "May the forest guide your path!"
             });
           }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
         }
       ]
     },
     'Managarmr Central City': {
       description: 'The magnificent capital city of Elendor.',
       options: [
-        { icon: '⚔️', label: 'Legendary Weapons Shop', action: () => console.log('Open weapon shop') },
-        { icon: '🛡️', label: 'Premium Armor Shop', action: () => console.log('Open armor shop') },
-        { icon: '🏰', label: 'Meeting Hall', action: () => console.log('Enter hall') },
-        { icon: '🏦', label: 'Managarmr Bank', action: () => console.log('Access bank') },
-        { icon: '🍺', label: 'Managarmr Tavern', action: () => console.log('Enter tavern') },
-        { icon: '💬', label: 'City Information', action: () => console.log('Dialog') }
+        { 
+          icon: '⚔️', 
+          label: 'Legendary Weapons Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('managarmrWeapons');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🛡️', 
+          label: 'Premium Armor Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('managarmrArmor');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🏰', 
+          label: 'Meeting Hall', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Balai Pertemuan Managarmr!",
+              tips: [
+                "Di sini Anda bisa bertemu dengan para pemimpin kota.",
+                "Berbagai keputusan penting diambil di tempat ini.",
+                "Balai ini juga menyimpan sejarah panjang Elendor."
+              ],
+              farewell: "Semoga kunjungan Anda bermanfaat!"
+            });
+          }
+        },
+        { 
+          icon: '🏦', 
+          label: 'Managarmr Bank', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Bank Managarmr!",
+              tips: [
+                "Kami menyediakan layanan penyimpanan emas yang aman.",
+                "Anda bisa menyimpan dan mengambil emas kapan saja.",
+                "Keamanan harta Anda adalah prioritas kami."
+              ],
+              farewell: "Terima kasih telah mempercayai Bank Managarmr!"
+            });
+          }
+        },
+        { 
+          icon: '🍺', 
+          label: 'Managarmr Tavern', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Tavern Managarmr!",
+              tips: [
+                "Tempat terbaik untuk mendengar kabar terbaru.",
+                "Para petualang sering berkumpul di sini.",
+                "Cobalah hidangan dan minuman spesial kami."
+              ],
+              farewell: "Datang lagi ya!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Wheatlived Village': {
       description: 'A peaceful and productive wheat farming village.',
       options: [
-        { icon: '🌾', label: 'Wheat Market', action: () => console.log('Open market') },
-        { icon: '🍞', label: 'Bakery Shop', action: () => console.log('Buy bread') },
-        { icon: '🏠', label: 'Farmer\'s Inn', action: () => console.log('Rest') },
-        { icon: '👨‍🌾', label: 'Meet Village Chief', action: () => console.log('Dialog') }
+        { 
+          icon: '🌾', 
+          label: 'Wheat Market', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('wheatMarket');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🍞', 
+          label: 'Bakery Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('wheatBakery');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🏠', 
+          label: 'Farmer\'s Inn', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowLodge(true);
+            setContainerContent('lodge');
+          }
+        },
+        { 
+          icon: '👨‍🌾', 
+          label: 'Meet Village Chief', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Wheatlived Village!",
+              tips: [
+                "Desa kami adalah penghasil gandum terbaik di Elendor.",
+                "Roti buatan toko roti kami sangat terkenal.",
+                "Para petani kami bekerja keras sepanjang tahun.",
+                "Jangan lupa mencoba makanan khas desa kami!"
+              ],
+              farewell: "Semoga panen selalu melimpah!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Fishmell Village': {
       description: 'A fishing village by Lake Lakers rich in seafood.',
       options: [
-        { icon: '🐟', label: 'Fish Market', action: () => console.log('Open fish market') },
-        { icon: '🎣', label: 'Fishing Equipment Shop', action: () => console.log('Buy fishing gear') },
-        { icon: '🍜', label: 'Fish Soup House', action: () => console.log('Open food court') },
-        { icon: '⛵', label: 'Boat Rental', action: () => console.log('Rent boat') },
-        { icon: '👨‍🦳', label: 'Meet Old Fisherman', action: () => console.log('Dialog') }
+        { 
+          icon: '🐟', 
+          label: 'Fish Market', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('fishMarket');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🎣', 
+          label: 'Fishing Equipment Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('fishingShop');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🍜', 
+          label: 'Fish Soup House', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Rumah Sup Ikan!",
+              tips: [
+                "Sup ikan kami dibuat dari ikan segar pilihan.",
+                "Resep rahasia turun-temurun keluarga.",
+                "Cocok dimakan saat cuaca dingin."
+              ],
+              farewell: "Selamat menikmati!"
+            });
+          }
+        },
+        { 
+          icon: '⛵', 
+          label: 'Boat Rental', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Penyewaan Perahu!",
+              tips: [
+                "Kami menyewakan berbagai jenis perahu.",
+                "Tersedia untuk memancing atau sekedar berkeliling danau.",
+                "Keselamatan penumpang adalah prioritas kami."
+              ],
+              farewell: "Selamat berlayar!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Stonedust Castle': {
       description: 'The mighty military fortress and defense center of Elendor.',
       options: [
-        { icon: '⚔️', label: 'Training Room', action: () => console.log('Train') },
-        { icon: '🛡️', label: 'Military Armory', action: () => console.log('Open armory') },
-        { icon: '📜', label: 'Military Missions', action: () => console.log('Accept mission') },
-        { icon: '👨‍✈️', label: 'Report to Commander', action: () => console.log('Dialog') }
+        { 
+          icon: '⚔️', 
+          label: 'Training Room', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Ruang Latihan!",
+              tips: [
+                "Di sini Anda bisa berlatih teknik bertarung.",
+                "Para pelatih berpengalaman siap membimbing.",
+                "Latihan rutin membuat Anda lebih kuat."
+              ],
+              farewell: "Tetap semangat berlatih!"
+            });
+          }
+        },
+        { 
+          icon: '🛡️', 
+          label: 'Military Armory', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('militaryArmory');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Military Missions', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Pusat Misi Militer!",
+              tips: [
+                "Berbagai misi tersedia untuk diambil.",
+                "Selesaikan misi untuk mendapat hadiah.",
+                "Tingkatkan reputasi Anda di militer."
+              ],
+              farewell: "Semoga berhasil dalam misi Anda!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Beautiful Harbor': {
       description: 'A busy port serving as Elendor\'s trade center.',
       options: [
-        { icon: '🏪', label: 'Import Market', action: () => console.log('Open market') },
-        { icon: '⛵', label: 'Ship Dock', action: () => console.log('View ships') },
-        { icon: '📦', label: 'Warehouse', action: () => console.log('Open warehouse') },
-        { icon: '🍺', label: 'Sailor\'s Tavern', action: () => console.log('Enter tavern') },
-        { icon: '👨‍👨‍👦‍👦', label: 'Meet Merchants', action: () => console.log('Dialog') }
+        { 
+          icon: '🏪', 
+          label: 'Import Market', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('importMarket');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '⛵', 
+          label: 'Ship Dock', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Dermaga!",
+              tips: [
+                "Berbagai kapal dari berbagai negeri berlabuh di sini.",
+                "Jadwal pelayaran tersedia di papan pengumuman.",
+                "Pastikan cuaca baik sebelum berlayar."
+              ],
+              farewell: "Semoga pelayaran Anda menyenangkan!"
+            });
+          }
+        },
+        { 
+          icon: '📦', 
+          label: 'Warehouse', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Gudang Pelabuhan!",
+              tips: [
+                "Kami menyimpan berbagai barang dagangan.",
+                "Keamanan barang terjamin 24 jam.",
+                "Sistem inventaris terorganisir dengan baik."
+              ],
+              farewell: "Terima kasih telah menggunakan jasa kami!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Wizard Tower': {
       description: 'The mysterious tower of magical arts.',
       options: [
-        { icon: '📚', label: 'Magic Library', action: () => console.log('Open library') },
-        { icon: '🔮', label: 'Potion Shop', action: () => console.log('Buy potions') },
-        { icon: '✨', label: 'Learn Magic', action: () => console.log('Learn') },
-        { icon: '🧙‍♂️', label: 'Meet Archmage', action: () => console.log('Dialog') }
+        { 
+          icon: '📚', 
+          label: 'Magic Library', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Perpustakaan Sihir!",
+              tips: [
+                "Ribuan buku sihir tersimpan di sini.",
+                "Pelajari mantra-mantra kuno.",
+                "Jaga ketenangan saat membaca."
+              ],
+              farewell: "Semoga pengetahuan Anda bertambah!"
+            });
+          }
+        },
+        { 
+          icon: '🔮', 
+          label: 'Potion Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('potionShop');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '✨', 
+          label: 'Learn Magic', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Kelas Sihir!",
+              tips: [
+                "Pelajari dasar-dasar sihir di sini.",
+                "Latihan rutin membuat sihir lebih kuat.",
+                "Hati-hati dalam menggunakan sihir."
+              ],
+              farewell: "Semoga sihir menyertai Anda!"
+            });
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Sejarah Quest', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowQuest(true);
+            setContainerContent('quest');
+          }
+        }
       ]
     },
     'Stronghold Maul': {
       description: 'A fortress fallen to monsters and dark creatures.',
       options: [
-        { icon: '⚔️', label: 'Challenge Monsters', action: () => console.log('Start battle') },
-        { icon: '🗝️', label: 'Explore Rooms', action: () => console.log('Explore') },
-        { icon: '💀', label: 'Investigate Area', action: () => console.log('Investigate') }
+        { 
+          icon: '⚔️', 
+          label: 'Challenge Monsters', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Bersiaplah untuk pertarungan!",
+              tips: [
+                "Monster-monster kuat menunggu di dalam.",
+                "Pastikan perlengkapan Anda memadai.",
+                "Bertarunglah dengan bijak dan hati-hati."
+              ],
+              farewell: "Semoga keberuntungan menyertai Anda!"
+            });
+          }
+        },
+        { 
+          icon: '🗝️', 
+          label: 'Explore Rooms', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Jelajahi ruangan-ruangan misterius...",
+              tips: [
+                "Setiap ruangan menyimpan misteri.",
+                "Harta karun tersembunyi menunggu.",
+                "Waspadalah terhadap jebakan."
+              ],
+              farewell: "Berhati-hatilah dalam penjelajahan Anda!"
+            });
+          }
+        }
       ]
     },
     'Dwarf Kingdom': {
       description: 'The ruins of the ancient Dwarf Kingdom.',
       options: [
-        { icon: '⛏️', label: 'Old Mine', action: () => console.log('Explore mine') },
-        { icon: '🏺', label: 'Search Artifacts', action: () => console.log('Search artifacts') },
-        { icon: '🗝️', label: 'Explore Ruins', action: () => console.log('Explore') },
-        { icon: '👻', label: 'Meet Dark Dwarf', action: () => console.log('Dialog') }
+        { 
+          icon: '⛏️', 
+          label: 'Old Mine', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Tambang Tua!",
+              tips: [
+                "Tambang ini menyimpan banyak mineral berharga.",
+                "Berhati-hatilah dengan struktur yang rapuh.",
+                "Perhatikan tanda-tanda bahaya."
+              ],
+              farewell: "Semoga beruntung dalam penambangan!"
+            });
+          }
+        },
+        { 
+          icon: '🏺', 
+          label: 'Search Artifacts', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Pencarian Artefak Dwarf...",
+              tips: [
+                "Artefak kuno tersebar di seluruh kerajaan.",
+                "Setiap artefak memiliki kekuatan tersembunyi.",
+                "Catat setiap penemuan Anda."
+              ],
+              farewell: "Semoga penemuan besar menanti Anda!"
+            });
+          }
+        }
       ]
     },
     'Elven Kingdom': {
       description: 'The mysterious Elven Kingdom guarding the 8 sacred relics.',
       options: [
-        { icon: '🏰', label: 'Enter Palace', disabled: true, action: () => console.log('Enter palace') },
-        { icon: '📜', label: 'Ask About Relics', action: () => console.log('Relic dialog') },
-        { icon: '✨', label: 'Present Relics', 
-          disabled: !obtainedRelics.every(relic => relic), 
-          action: () => console.log('Present relics') }
+        { 
+          icon: '🏰', 
+          label: 'Enter Palace', 
+          disabled: !obtainedRelics.every(relic => relic),
+          action: () => {
+            setShowVisitMenu(false);
+            if (obtainedRelics.every(relic => relic)) {
+              setShowGameCompletion(true);
+            } else {
+              setShowDialog(true);
+              setDialogContent({
+                greeting: "Selamat datang di Istana Peri!",
+                tips: [
+                  "Istana ini hanya terbuka bagi yang telah mengumpulkan semua relik.",
+                  "Rahasia besar menanti di dalam.",
+                  "Buktikan kelayakan Anda."
+                ],
+                farewell: "Takdir Anda menanti di dalam istana!"
+              });
+            }
+          }
+        },
+        { 
+          icon: '📜', 
+          label: 'Ask About Relics', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Tentang Relik Suci...",
+              tips: [
+                "8 relik suci tersebar di seluruh Elendor.",
+                "Setiap relik memiliki kekuatan unik.",
+                "Kumpulkan semuanya untuk membuka rahasia terbesar.",
+                `Relik yang telah Anda kumpulkan: ${obtainedRelics.filter(r => r).length}/8`
+              ],
+              farewell: "Lanjutkan pencarian Anda!"
+            });
+          }
+        }
       ]
     }
   };
@@ -2877,6 +3308,42 @@ const World = () => {
       setShowContainerShown(true);
       setContainerContent('visit');
     }
+  };
+
+  // Handle quest completion
+  const handleQuestComplete = () => {
+    const locationIndex = {
+      'Lakers City': 0,
+      'Woodville City': 1,
+      'Managarmr Central City': 2,
+      'Wheatlived Village': 3,
+      'Fishmell Village': 4,
+      'Stonedust Castle': 5,
+      'Beautiful Harbor': 6,
+      'Wizard Tower': 7
+    }[currentLocation];
+
+    console.log('Quest completed at location:', currentLocation, 'index:', locationIndex);
+    const newRelics = [...obtainedRelics];
+    newRelics[locationIndex] = true;
+    setObtainedRelics(newRelics);
+    
+    // Update character stats to reflect relic obtained
+    const relicNames = [
+      'Majapahit Relic',
+      'Kutai Relic',
+      'Sriwijaya Relic',
+      'Mataram Kuno Relic',
+      'Samudra Pasai Relic',
+      'Demak Relic',
+      'Mataram Islam Relic',
+      'Gowa-Tallo Relic'
+    ];
+    
+    updateCharacterStats({
+      ...characterStats,
+      relics: newRelics.map((obtained, idx) => obtained ? relicNames[idx] : null).filter(Boolean)
+    });
   };
 
   // Add loading screen
@@ -3121,6 +3588,216 @@ const World = () => {
           stamina: 20
         }
       }
+    ],
+    managarmrWeapons: [
+      {
+        id: 'excalibur',
+        name: 'Excalibur',
+        icon: '⚔️',
+        type: 'weapon',
+        price: 1000,
+        durability: 100,
+        stats: {
+          damage: 50,
+          hp: 30
+        }
+      },
+      {
+        id: 'mjolnir',
+        name: 'Mjolnir',
+        icon: '🔨',
+        type: 'weapon',
+        price: 800,
+        durability: 100,
+        stats: {
+          damage: 40,
+          defense: 10
+        }
+      }
+    ],
+    managarmrArmor: [
+      {
+        id: 'dragonPlate',
+        name: 'Dragon Plate',
+        icon: '🛡️',
+        type: 'armor',
+        price: 1200,
+        durability: 100,
+        stats: {
+          defense: 40,
+          hp: 50
+        }
+      },
+      {
+        id: 'mythrilHelm',
+        name: 'Mythril Helm',
+        icon: '🪖',
+        type: 'helmet',
+        price: 600,
+        durability: 100,
+        stats: {
+          defense: 25,
+          hp: 30
+        }
+      }
+    ],
+    wheatMarket: [
+      {
+        id: 'wheat',
+        name: 'Fresh Wheat',
+        icon: '🌾',
+        type: 'material',
+        price: 10,
+        stats: {
+          hunger: 5,
+          stamina: 3
+        }
+      },
+      {
+        id: 'flour',
+        name: 'Wheat Flour',
+        icon: '🌾',
+        type: 'material',
+        price: 15,
+        stats: {
+          hunger: 3
+        }
+      }
+    ],
+    wheatBakery: [
+      {
+        id: 'bread',
+        name: 'Fresh Bread',
+        icon: '🍞',
+        type: 'food',
+        price: 25,
+        stats: {
+          hunger: 30,
+          hp: 10
+        }
+      },
+      {
+        id: 'cake',
+        name: 'Wheat Cake',
+        icon: '🍰',
+        type: 'food',
+        price: 40,
+        stats: {
+          hunger: 45,
+          hp: 15,
+          stamina: 20
+        }
+      }
+    ],
+    fishMarket: [
+      {
+        id: 'rawFish',
+        name: 'Fresh Fish',
+        icon: '🐟',
+        type: 'food',
+        price: 20,
+        stats: {
+          hunger: 25,
+          hp: 8
+        }
+      },
+      {
+        id: 'fishSoup',
+        name: 'Fish Soup',
+        icon: '🍜',
+        type: 'food',
+        price: 35,
+        stats: {
+          hunger: 40,
+          hp: 15
+        }
+      }
+    ],
+    fishingShop: [
+      {
+        id: 'fishingRod',
+        name: 'Fishing Rod',
+        icon: '🎣',
+        type: 'tool',
+        price: 100,
+        durability: 100
+      },
+      {
+        id: 'fishingNet',
+        name: 'Fishing Net',
+        icon: '🕸️',
+        type: 'tool',
+        price: 150,
+        durability: 100
+      }
+    ],
+    militaryArmory: [
+      {
+        id: 'steelSword',
+        name: 'Steel Sword',
+        icon: '⚔️',
+        type: 'weapon',
+        price: 300,
+        durability: 100,
+        stats: {
+          damage: 25,
+          defense: 5
+        }
+      },
+      {
+        id: 'steelArmor',
+        name: 'Steel Armor',
+        icon: '🛡️',
+        type: 'armor',
+        price: 400,
+        durability: 100,
+        stats: {
+          defense: 30,
+          hp: 25
+        }
+      }
+    ],
+    importMarket: [
+      {
+        id: 'spices',
+        name: 'Exotic Spices',
+        icon: '🌶️',
+        type: 'material',
+        price: 50,
+        stats: {
+          stamina: 10,
+          speed: 1
+        }
+      },
+      {
+        id: 'silk',
+        name: 'Fine Silk',
+        icon: '🧵',
+        type: 'material',
+        price: 75
+      }
+    ],
+    potionShop: [
+      {
+        id: 'healthPotion',
+        name: 'Health Potion',
+        icon: '🧪',
+        type: 'consumable',
+        price: 100,
+        stats: {
+          hp: 50
+        }
+      },
+      {
+        id: 'manaPotion',
+        name: 'Mana Potion',
+        icon: '🧪',
+        type: 'consumable',
+        price: 120,
+        stats: {
+          mp: 50
+        }
+      }
     ]
   };
 
@@ -3244,7 +3921,110 @@ const World = () => {
     }
   };
 
-  // Add to the JSX return
+  const handleUseItem = (item) => {
+    if (!item) return;
+    
+    let effectMessage = '';
+    
+    // Update stats based on item type and stats
+    if (item.type === 'food' || item.type === 'consumable' || item.type === 'material') {
+      // Apply HP effect
+      if (item.stats?.hp) {
+        setCurrentStats(prev => {
+          const newHp = Math.min(prev.maxHp, prev.hp + item.stats.hp);
+          return { ...prev, hp: newHp };
+        });
+        effectMessage += `+${item.stats.hp} HP `;
+      }
+
+      // Apply hunger effect (food and some materials)
+      if (item.stats?.hunger) {
+        setCurrentHunger(prev => Math.min(100, prev + item.stats.hunger));
+        effectMessage += `+${item.stats.hunger} Hunger `;
+      }
+
+      // Apply stamina effect
+      if (item.stats?.stamina) {
+        setCurrentStamina(prev => Math.min(100, prev + item.stats.stamina));
+        effectMessage += `+${item.stats.stamina} Stamina `;
+      }
+
+      // Apply mana effect
+      if (item.stats?.mp) {
+        setCurrentStats(prev => ({
+          ...prev,
+          mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + item.stats.mp)
+        }));
+        effectMessage += `+${item.stats.mp} MP `;
+      }
+
+      // Apply temporary effects (damage, speed, etc)
+      if (item.stats?.damage) {
+        setCurrentStats(prev => ({
+          ...prev,
+          damage: prev.damage + item.stats.damage
+        }));
+        effectMessage += `+${item.stats.damage} Damage `;
+        // Reset after 5 minutes
+        setTimeout(() => {
+          setCurrentStats(prev => ({
+            ...prev,
+            damage: prev.damage - item.stats.damage
+          }));
+        }, 300000);
+      }
+
+      if (item.stats?.speed) {
+        setCurrentStats(prev => ({
+          ...prev,
+          speed: prev.speed + item.stats.speed
+        }));
+        effectMessage += `+${item.stats.speed} Speed `;
+        // Reset after 5 minutes
+        setTimeout(() => {
+          setCurrentStats(prev => ({
+            ...prev,
+            speed: prev.speed - item.stats.speed
+          }));
+        }, 300000);
+      }
+
+      // Remove item from inventory
+      const newInventory = [...inventory.main];
+      const itemIndex = newInventory.findIndex(i => i === item);
+      if (itemIndex !== -1) {
+        if (item.count > 1) {
+          newInventory[itemIndex] = {
+            ...item,
+            count: item.count - 1
+          };
+        } else {
+          newInventory[itemIndex] = null;
+        }
+        setInventory({
+          ...inventory,
+          main: newInventory
+        });
+      }
+
+      // Show effect message
+      setUseItemMessage(`Used ${item.name}: ${effectMessage}`);
+      setTimeout(() => setUseItemMessage(''), 2000);
+    }
+    
+    setSelectedItem(null);
+  };
+
+  const handleLoadGame = (savedData) => {
+    const { characterStats, obtainedRelics, inventory, position } = savedData;
+    setCharacterStats(characterStats);
+    setObtainedRelics(obtainedRelics);
+    setInventory(inventory);
+    setPosition(position);
+    setShowSaveLoadMenu(false);
+    setIsPaused(false);
+  };
+
   return (
     <WorldContainer>
       <Header>Elendor - {playerName}</Header>
@@ -3304,6 +4084,19 @@ const World = () => {
                 if (!showDetailedStats && !showVisitMenu) setShowContainerShown(false);
               }}>×</CloseButton>
               <InventoryTitle>Inventory</InventoryTitle>
+              
+              {useItemMessage && (
+                <div style={{
+                  padding: '10px',
+                  margin: '10px',
+                  textAlign: 'center',
+                  color: '#4CAF50',
+                  backgroundColor: 'rgba(0,0,0,0.5)',
+                  borderRadius: '5px'
+                }}>
+                  {useItemMessage}
+                </div>
+              )}
               
               <ArmorAndPlayerSection>
                 <ArmorGrid>
@@ -3399,6 +4192,16 @@ const World = () => {
                                 </PopupButton>
                               )
                             ))}
+                            {(item.type === 'food' || item.type === 'consumable' || (item.type === 'material' && item.stats)) && (
+                              <PopupButton
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUseItem(item);
+                                }}
+                              >
+                                Use
+                              </PopupButton>
+                            )}
                             <PopupButton 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -3635,6 +4438,33 @@ const World = () => {
               </VisitOptionList>
             </MenuPanel>
           )}
+
+          {showQuest && (
+            <MenuPanel 
+              $isVisible={showQuest} 
+              $isStacked={showInventory || showDetailedStats || showVisitMenu || showShop || showLodge || showDialog}
+              style={{ 
+                order: containerContent === 'quest' ? 0 : 1,
+                pointerEvents: 'auto',
+                zIndex: containerContent === 'quest' ? 2 : 1
+              }}
+            >
+              <CloseButton onClick={() => {
+                setShowQuest(false);
+                setShowVisitMenu(true);
+                setContainerContent('visit');
+              }}>×</CloseButton>
+              <QuestDialog 
+                location={currentLocation}
+                onClose={() => {
+                  setShowQuest(false);
+                  setShowVisitMenu(true);
+                  setContainerContent('visit');
+                }}
+                onComplete={handleQuestComplete}
+              />
+            </MenuPanel>
+          )}
         </ContainerShown>
 
         <UIContainer>
@@ -3774,16 +4604,7 @@ const World = () => {
           </ControlsPanel>
         </UIContainer>
 
-        {isPaused && (
-          <PauseOverlay>
-            <PauseMenu>
-              <PauseTitle>Game Paused</PauseTitle>
-              <PauseButton onClick={togglePause}>Resume</PauseButton>
-              <PauseButton onClick={handleRestart}>Restart</PauseButton>
-              <PauseButton onClick={handleExitToMainMenu}>Exit to Main Menu</PauseButton>
-            </PauseMenu>
-          </PauseOverlay>
-        )}
+
 
         <MapOverlay $show={showMap} />
         <MapPopup $show={showMap}>
@@ -3799,6 +4620,62 @@ const World = () => {
           </div>
         </MapPopup>
       </GameArea>
+      {showGameCompletion && (
+        <>
+          <MapOverlay $show={true} />
+          <GameCompletionPopup>
+            <GameCompletionTitle>Selamat! Anda telah menyelesaikan Game!</GameCompletionTitle>
+            <GameCompletionText>
+              Anda telah berhasil mengumpulkan semua 8 Relik Suci dan membuka rahasia terbesar Elendor!
+            </GameCompletionText>
+            <GameCompletionText>
+              Perjalanan Anda telah membuktikan bahwa Anda adalah pahlawan sejati yang memahami sejarah Indonesia.
+            </GameCompletionText>
+            <GameCompletionText>
+              Total Gold yang dikumpulkan: {characterStats.gold}
+            </GameCompletionText>
+            <GameCompletionText>
+              Relik yang dikumpulkan:
+              <ul style={{ textAlign: 'left', marginTop: '10px' }}>
+                <li>Majapahit Relic - Kekuatan Kerajaan Terbesar Nusantara</li>
+                <li>Kutai Relic - Warisan Kerajaan Hindu Tertua</li>
+                <li>Sriwijaya Relic - Kejayaan Maritim Nusantara</li>
+                <li>Mataram Kuno Relic - Peninggalan Budaya Jawa Kuno</li>
+                <li>Samudra Pasai Relic - Cahaya Islam di Nusantara</li>
+                <li>Demak Relic - Kesultanan Islam Tanah Jawa</li>
+                <li>Mataram Islam Relic - Kejayaan Islam di Pulau Jawa</li>
+                <li>Gowa-Tallo Relic - Kerajaan Maritim Sulawesi</li>
+              </ul>
+            </GameCompletionText>
+            <GameCompletionButton onClick={handleExitToMainMenu}>
+              Kembali ke Menu Utama
+            </GameCompletionButton>
+          </GameCompletionPopup>
+        </>
+      )}
+      
+      {isPaused && (
+        <>
+          <PauseOverlay />
+          <PauseMenu
+            onResume={togglePause}
+            onRestart={handleRestart}
+            onExit={handleExitToMainMenu}
+            onSaveLoad={() => setShowSaveLoadMenu(true)}
+          />
+          {showSaveLoadMenu && (
+            <SaveLoadMenu
+              characterStats={characterStats}
+              obtainedRelics={obtainedRelics}
+              inventory={inventory}
+              position={position}
+              onLoad={handleLoadGame}
+              onClose={() => setShowSaveLoadMenu(false)}
+              setUseItemMessage={setUseItemMessage}
+            />
+          )}
+        </>
+      )}
     </WorldContainer>
   );
 };

@@ -1,79 +1,72 @@
-# 🎮 Elendor - Game Sejarah Indonesia
+ELENDOR - GAME SEJARAH INDONESIA
+================================
 
 Selamat datang di Elendor, sebuah game RPG edukasi yang mengajak pemain menjelajahi sejarah kerajaan-kerajaan di Indonesia melalui petualangan yang menarik!
 
-## 📋 Daftar Isi
-- [Tentang Game](#tentang-game)
-- [Cara Menjalankan Game](#cara-menjalankan-game)
-- [Tutorial](#tutorial)
-- [Kontrol Game](#kontrol-game)
-- [Fitur Game](#fitur-game)
-- [Sistem Quest](#sistem-quest)
-- [Save & Load](#save--load)
-- [Cheat Code](#cheat-code)
+DAFTAR ISI
+----------
+1. Tentang Game
+2. Cara Menjalankan Game
+3. Tutorial
+4. Kontrol Game
+5. Fitur Game
+6. Sistem Quest
+7. Save & Load
+8. Cheat Code
 
-## 🎯 Tentang Game
+1. TENTANG GAME
+--------------
 Elendor adalah game RPG berbasis web yang menggabungkan unsur pembelajaran sejarah Indonesia dengan gameplay yang menarik. Pemain akan menjelajahi 8 lokasi berbeda yang masing-masing mewakili kerajaan bersejarah di Indonesia.
 
-### Kerajaan yang Dapat Dijelajahi:
-1. Majapahit
-2. Kutai
-3. Sriwijaya
-4. Mataram Kuno
-5. Samudra Pasai
-6. Demak
-7. Mataram Islam
-8. Gowa-Tallo
+Kerajaan yang Dapat Dijelajahi:
+- Majapahit
+- Kutai
+- Sriwijaya
+- Mataram Kuno
+- Samudra Pasai
+- Demak
+- Mataram Islam
+- Gowa-Tallo
 
-## 💻 Cara Menjalankan Game
-
-### Persyaratan Sistem
+2. CARA MENJALANKAN GAME
+-----------------------
+Persyaratan Sistem:
 - Node.js (versi 14.0.0 atau lebih baru)
 - NPM (Node Package Manager)
 - Browser modern (Chrome, Firefox, Edge, dll)
 
-### Langkah Instalasi
+Langkah Instalasi:
 1. Clone repository ini:
-   ```bash
    git clone [URL_REPOSITORY]
-   ```
 
 2. Masuk ke direktori game:
-   ```bash
-   cd Elendor-v1.0.0
-   ```
+   cd Elendor-v0.0.1
 
 3. Install dependencies:
-   ```bash
    npm install
-   ```
 
 4. Jalankan game dalam mode development:
-   ```bash
    npm run dev
-   ```
 
 5. Buka browser dan akses:
-   ```
    http://localhost:3000
-   ```
 
-## 📖 Tutorial
-
-### Memulai Game
+3. TUTORIAL
+----------
+Memulai Game:
 1. Pilih karakter di menu utama
 2. Baca introduction story
 3. Mulai petualangan di dunia Elendor
 
-### Basic Rules
+Basic Rules:
 - Setiap lokasi memiliki 5 wave quest
 - Jawab pertanyaan dengan benar untuk mendapatkan gold dan relic
 - Jaga HP agar tidak habis
 - Kumpulkan 8 relic untuk menyelesaikan game
 
-## 🎮 Kontrol Game
-
-### Keyboard
+4. KONTROL GAME
+--------------
+Keyboard:
 - WASD / Arrow Keys: Gerakan karakter
 - E: Interaksi
 - I: Buka/tutup inventory
@@ -83,38 +76,40 @@ Elendor adalah game RPG berbasis web yang menggabungkan unsur pembelajaran sejar
 - P: Pause game
 - ESC: Pause/Resume game
 
-### Mouse/Touch
+Mouse/Touch:
 - Klik pada tombol di interface
 - D-Pad virtual untuk movement di perangkat mobile
 - Tap untuk interaksi di perangkat mobile
 
-## 🌟 Fitur Game
-
-### Karakter
+5. FITUR GAME
+------------
+Karakter:
 - HP dan MP system
 - Inventory management
 - Equipment system
 - Stats dan level up
 
-### World
+World:
 - 8 lokasi unik
 - Day/Night cycle
 - NPC interaktif
 - Quest system
 
-### Quest & Rewards
+Quest & Rewards:
 - Gold rewards: 100-300 per quest
 - Damage penalty: 5-25 HP untuk jawaban salah
 - Relic reward setelah menyelesaikan 5 wave
 - Special interaction di Elven Kingdom
 
-## 📜 Sistem Quest
+6. SISTEM QUEST
+-------------
 - Setiap lokasi memiliki 5 wave quest
 - Pertanyaan seputar sejarah kerajaan
 - Tingkat kesulitan meningkat setiap wave
 - Reward meningkat sesuai kesulitan
 
-## 💾 Save & Load
+7. SAVE & LOAD
+------------
 1. Tekan ESC untuk membuka menu pause
 2. Pilih "Save/Load Game"
 3. Pilih opsi:
@@ -122,35 +117,30 @@ Elendor adalah game RPG berbasis web yang menggabungkan unsur pembelajaran sejar
    - Load Game: Muat save terakhir
    - Delete Save: Hapus save file
 
-## 🎯 Cheat Code
+8. CHEAT CODE
+-----------
 - Tekan 'P' untuk mendapatkan semua relic secara instan
 - Gunakan dengan bijak karena akan mengurangi pengalaman bermain
 
-## 🏆 Game Completion
+GAME COMPLETION
+-------------
 - Kumpulkan 8 relic dari semua kerajaan
 - Selesaikan semua quest di setiap lokasi
 - Buka special ending di Elven Kingdom
 - Lihat statistik perjalanan di completion screen
 
-## 🛠️ Troubleshooting
+TROUBLESHOOTING
+-------------
 Jika mengalami masalah:
 1. Pastikan semua dependencies terinstall
 2. Clear browser cache
 3. Restart game
 4. Periksa console untuk error message
 
-## 📝 Catatan
+CATATAN
+-------
 - Game ini dibuat untuk tujuan edukasi
 - Semua konten sejarah berdasarkan fakta
 - Feedback dan saran sangat diapresiasi
 
-Selamat bermain dan belajar sejarah Indonesia! 🎮📚
-
-Group members: <br/>
-• Pierre E.S Moningka - 00000128411  <br/>
-• Tito Shafy - 00000127746 <br/>
-• Muhamad Altha Rasjid - 00000136220 <br/>
-• Dylan Wilson - 00000134282 <br/>
-• 00000115200 - Andy Edlynson Kadiran <br/>
-
-https://github.com/totibakar/elendor
+Selamat bermain dan belajar sejarah Indonesia! 
