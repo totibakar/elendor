@@ -316,7 +316,7 @@ const MainMenu = () => {
         hunger: 90,
         stamina: 100,
         damage: 16,
-        speed: 1,
+        speed: 2.5,
         armor: 15,
         gold: 75
       },
@@ -560,7 +560,7 @@ const MainMenu = () => {
                         <span className="stat-value">{characters[selectedCharacter].stats.stamina}/100</span>
                       </div>
                       <div className="stat">
-                        <span className="stat-label">Attack</span>
+                        <span className="stat-label">Damage</span>
                         <div className="stat-bar">
                           <div className="stat-fill" id="damage-fill" style={{ width: `${characters[selectedCharacter].stats.damage * 4}%` }}></div>
                         </div>
@@ -568,15 +568,17 @@ const MainMenu = () => {
                       </div>
                       <div className="stat no-bar">
                         <span className="stat-label">Speed</span>
-                        <span className="stat-value-large">Normal</span>
+                        <span className="stat-value-large">
+                          {characters[selectedCharacter].stats.speed === 2.5 ? 'Fast' : 'Normal'}
+                        </span>
                       </div>
                       <div className="stat no-bar">
-                        <span className="stat-label">Armor</span>
+                        <span className="stat-label">Defense</span>
                         <span className="stat-value-large">{characters[selectedCharacter].stats.armor}</span>
                       </div>
                       <div className="stat no-bar">
                         <span className="stat-label">Gold</span>
-                        <span className="stat-value-large">{characters[selectedCharacter].stats.gold}</span>
+                        <span className="stat-value-large">{characters[selectedCharacter].stats.gold} G</span>
                       </div>
                     </div>
                   </div>

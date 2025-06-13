@@ -1,8 +1,86 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
-import { DEFAULT_LOCATIONS } from '../constants/defaultLocations';
+import { collisionManager } from '../utils/CollisionManager';
+import { spawnManager } from '../utils/SpawnManager';
+import { locationManager } from '../utils/LocationManager';
+
+// Constants
+const MAP_DIMENSIONS = {
+  width: 2048,
+  height: 1639
+};
+
+const VIEWPORT_ZOOM = 4.5;
+const CHARACTER_WIDTH = 18;
+const CHARACTER_HEIGHT = 24;
+const MAP_PADDING = 40;
+const SPRINT_COOLDOWN = 3000; // 3 seconds cooldown
+const STAMINA_THRESHOLD = 5; // Minimum stamina required to start sprinting
+const VIEWPORT_WIDTH = 400;
+const VIEWPORT_HEIGHT = 300;
+
+// Add these constants
+const FIXED_TIMESTEP = 1000 / 60; // 60 FPS
+const MAX_FRAME_TIME = 250; // Maximum time between frames (ms)
+const BASE_MOVEMENT_SPEED = 2; // Base movement speed
+
+const SPEED_MULTIPLIERS = {
+  walk: 2,
+  run: {
+    normal: 2.75,
+    fast: 3.5
+  }
+};
+
+const VIEWPORT_PADDING = {
+  left: VIEWPORT_WIDTH / 2,
+  right: VIEWPORT_WIDTH / 2,
+  top: VIEWPORT_HEIGHT / 2,
+  bottom: VIEWPORT_HEIGHT / 2
+};
+
+const MOVEMENT_SMOOTHING = 0.08; // Much lower for smoother movement
+const MIN_MOVEMENT_THRESHOLD = 0.01; // Minimum movement distance
+
+const GameContainer = styled.div`
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(139, 69, 19, 0.2);
+  border: 1px solid #8b4513;
+  color: #d4af37;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 11;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &:hover {
+    background: rgba(212, 175, 55, 0.2);
+    border-color: #d4af37;
+    transform: scale(1.1) rotate(90deg);
+  }
+
+  &:active {
+    transform: scale(0.95) rotate(90deg);
+  }
+`;
 
 const WorldContainer = styled.div`
   width: 100vw;
@@ -23,7 +101,7 @@ const Header = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: clamp(18px, 4vw, 24px);
   font-weight: bold;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
   font-family: 'MedievalSharp', cursive;
@@ -35,6 +113,11 @@ const GameArea = styled.div`
   height: calc(100% - 60px);
   display: flex;
   background: #1a0f2b;
+  flex-direction: row;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+  }
 `;
 
 const MapFrame = styled.div`
@@ -45,35 +128,95 @@ const MapFrame = styled.div`
   border-right: 2px solid #8b4513;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
+  justify-content: flex-start;
+  padding: 10px 10px 10px 40px;
   box-sizing: border-box;
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    width: 100%;
+    height: 70%;
+    border-right: none;
+    border-bottom: 2px solid #8b4513;
+    padding: 10px;
+    justify-content: center;
+  }
+`;
+
+const GameplayContainer = styled.div`
+  width: 400px;
+  height: 300px;
+  border: 2px solid #8b4513;
+  position: relative;
+  overflow: hidden;
+  background: #2c1810;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: scale(2.5);
+  transform-origin: left center;
+
+  @media (max-width: 1024px) {
+    transform: scale(2);
+  }
+
+  @media (max-width: 768px) {
+    transform: scale(1.75);
+    transform-origin: center;
+  }
+
+  @media (max-width: 480px) {
+    transform: scale(1.25);
+    transform-origin: center;
+  }
+`;
+
+const ViewportContainer = styled.div`
+  position: relative;
+  width: 400px;
+  height: 300px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const ViewportFrame = styled.div`
+  position: relative;
+  width: 400px;
+  height: 300px;
+  overflow: hidden;
 `;
 
 const MapContainer = styled.div`
   position: relative;
-  width: 800px;
-  height: 600px;
-  border: 8px solid #8b4513;
-  border-radius: 8px;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-  background: #2c1810;
-  margin: auto;
+  width: ${MAP_DIMENSIONS.width}px;
+  height: ${MAP_DIMENSIONS.height}px;
+  overflow: visible;
 `;
 
-const Map = styled.div`
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background-size: cover;
+const Map = styled.div.attrs(props => ({
+  style: {
+    transform: `translate3d(${Math.floor(-props.$cameraX)}px, ${Math.floor(-props.$cameraY)}px, 0)`
+  }
+}))`
+  position: absolute;
+  width: ${MAP_DIMENSIONS.width}px;
+  height: ${MAP_DIMENSIONS.height}px;
+  background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   transform-origin: center;
-  transition: opacity 2s ease-in-out;
+  will-change: transform;
+  image-rendering: pixelated;
+  pointer-events: none;
 `;
 
-const DayNightOverlay = styled.div`
+const DayNightOverlay = styled.div.attrs(props => ({
+  style: {
+    opacity: props.$isNight ? 1 : 0
+  }
+}))`
   position: absolute;
   top: 0;
   left: 0;
@@ -82,35 +225,27 @@ const DayNightOverlay = styled.div`
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
-  opacity: ${props => props.isNight ? 1 : 0};
   transition: opacity 2s ease-in-out;
   z-index: 1;
   pointer-events: none;
 `;
 
-const Character = styled.div`
+const Character = styled.div.attrs(props => ({
+  style: {
+    left: `${Math.floor(props.x)}px`,
+    top: `${Math.floor(props.y)}px`
+  }
+}))`
   position: absolute;
-  width: 18px;
-  height: 24px;
+  width: ${CHARACTER_WIDTH}px;
+  height: ${CHARACTER_HEIGHT}px;
   background-size: 100% 100%;
   background-repeat: no-repeat;
   background-position: center;
   image-rendering: pixelated;
   z-index: 2;
-  left: ${props => props.x}px;
-  top: ${props => props.y}px;
-  transform: translate3d(0, 0, 0) scale(1);
-  backface-visibility: hidden;
-  transition: left 0.05s linear, top 0.05s linear;
-  will-change: transform, background-image, left, top;
-  zoom: reset;
-  -webkit-transform-style: preserve-3d;
-  transform-style: preserve-3d;
-  
-  @media screen and (-webkit-min-device-pixel-ratio: 0) {
-    transform: translate3d(0, 0, 0) scale(1);
-    zoom: 1;
-  }
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 `;
 
 const UIContainer = styled.div`
@@ -125,23 +260,111 @@ const UIContainer = styled.div`
   box-sizing: border-box;
   overflow-y: auto;
 
+  @media (max-width: 768px) {
+    width: 100%;
+    height: 35%;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    border-left: none;
+    border-top: 2px solid #8b4513;
+    padding: 10px;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 10px;
+    align-items: stretch;
+    z-index: 20;
+  }
+`;
+
+const ContainerShown = styled.div.attrs(props => ({
+  style: {
+    pointerEvents: props.$isVisible ? 'auto' : 'none'
+  }
+}))`
+  width: 20%;
+  height: 100%;
+  position: absolute;
+  right: 20%;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(44, 24, 16, 0.95);
+  border-right: 2px solid #8b4513;
+  border-left: 2px solid #8b4513;
+  
+  @media (max-width: 768px) {
+    width: 100%;
+    height: 65%;
+    right: 0;
+    top: 0;
+    border: none;
+    border-bottom: 2px solid #8b4513;
+    z-index: 15;
+  }
+`;
+
+const MenuPanel = styled.div.attrs(props => ({
+  style: {
+    transform: `translateX(${props.$isVisible ? '0' : '100%'}) scale(${props.$isVisible ? '1' : '0.95'})`,
+    opacity: props.$isVisible ? '1' : '0',
+    height: props.$isStacked ? '50%' : '100%'
+  }
+}))`
+  background: #2c1810;
+  border: 2px solid #8b4513;
+  border-radius: 8px;
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  
+  &:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    border-radius: 6px;
+    pointer-events: none;
+  }
+
   /* Styling the scrollbar */
   &::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
   }
 
   &::-webkit-scrollbar-track {
     background: rgba(139, 69, 19, 0.1);
     border-radius: 4px;
+    margin: 4px;
   }
 
   &::-webkit-scrollbar-thumb {
     background: #8b4513;
     border-radius: 4px;
+    border: 2px solid #2c1810;
     
     &:hover {
-      background: #a25616;
+      background: #d4af37;
     }
+  }
+
+  @media (max-width: 768px) {
+    height: ${props => props.$isStacked ? 'calc(50% - 10px)' : '100%'};
+    padding: 15px;
+  }
+
+  @media (max-width: 480px) {
+    padding: 10px;
   }
 `;
 
@@ -157,6 +380,15 @@ const StatsPanel = styled.div`
   gap: 12px;
   margin-top: 10px;
 
+  @media (max-width: 768px) {
+    min-width: 180px;
+    max-width: 220px;
+    margin-top: 0;
+    padding: 8px;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
   > div {
     display: flex;
     flex-direction: column;
@@ -164,7 +396,7 @@ const StatsPanel = styled.div`
 
     > div:first-child {
       color: #ffd700;
-      font-size: 16px;
+      font-size: clamp(12px, 2vw, 16px);
       text-align: left;
       text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
     }
@@ -186,7 +418,7 @@ const DetailedStatsPanel = styled.div`
   box-sizing: border-box;
   overflow-y: auto;
   z-index: 100;
-  transform: ${props => props.show ? 'translateX(0)' : 'translateX(100%)'};
+  transform: ${props => props.$show ? 'translateX(0)' : 'translateX(100%)'};
   transition: transform 0.3s ease-in-out;
 
   /* Styling the scrollbar */
@@ -211,22 +443,31 @@ const DetailedStatsPanel = styled.div`
 
 const StatRow = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: rgba(139, 69, 19, 0.2);
+  border: 1px solid #8b4513;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(139, 69, 19, 0.3);
+    transform: translateX(5px);
+  }
 `;
 
 const StatLabel = styled.div`
-  font-size: 12px;
+  font-size: 16px;
   color: #ffd700;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 `;
 
 const StatValue = styled.div`
   font-size: 16px;
   color: #fff;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 `;
 
 const CloseStatsButton = styled.button`
@@ -246,48 +487,240 @@ const CloseStatsButton = styled.button`
 `;
 
 const EquipmentSection = styled.div`
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #8b4513;
+  padding: 15px;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 8px;
 `;
 
-const EquipmentTitle = styled.div`
-  font-size: 18px;
+const EquipmentTitle = styled.h3`
   color: #ffd700;
-  margin-bottom: 10px;
+  font-size: 18px;
+  margin: 0 0 15px 0;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  letter-spacing: 1px;
+  border-bottom: 1px solid #8b4513;
+  padding-bottom: 10px;
 `;
 
 const EquipmentRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 5px 0;
-  color: #fff;
+  padding: 10px 15px;
+  background: rgba(139, 69, 19, 0.2);
+  border: 1px solid #8b4513;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  transition: all 0.2s ease;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:hover {
+    background: rgba(139, 69, 19, 0.3);
+    transform: translateX(5px);
+  }
+
+  span:first-child {
+    color: #d4af37;
+    font-weight: bold;
+  }
+
+  span:last-child {
+    color: #fff;
+  }
 `;
 
 const ControlsPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 20px;
-  margin-top: auto;
-  padding: 15px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 2px solid #8b4513;
-  border-radius: 8px;
   align-items: center;
+
+  @media (max-width: 768px) {
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+    gap: 10px;
+    padding: 0 10px;
+  }
 `;
 
-const DPad = styled.div`
+const MovementDPadContainer = styled.div`
   position: relative;
-  width: 120px; // Absolute size
-  height: 120px; // Absolute size
-  display: grid;
-  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
-  gap: 4px;
-  padding: 4px;
+  width: 160px;  // Increased from 140px
+  height: 160px; // Increased from 140px
+  margin: 20px auto 0; // Added margin-top to move it down a bit
+  padding: 10px;
+  background: rgba(44, 24, 16, 0.8);
+  clip-path: polygon(
+    33% 0%,
+    67% 0%,
+    67% 33%,
+    100% 33%,
+    100% 67%,
+    67% 67%,
+    67% 100%,
+    33% 100%,
+    33% 67%,
+    0% 67%,
+    0% 33%,
+    33% 33%
+  );
+  border-radius: 4px;
+  box-shadow: 
+    0 0 0 2px #8b4513,
+    inset 0 0 20px rgba(0, 0, 0, 0.3);
+
+  @media (max-width: 768px) {
+    width: 120px;
+    height: 120px;
+    margin: 0; // Reset margin for mobile
+  }
+
+  @media (max-width: 480px) {
+    width: 100px;
+    height: 100px;
+  }
 `;
 
-const DPadButton = styled.button`
+const MovementDPadButton = styled.button`
+  position: absolute;
+  width: 45px;  // Increased from original size
+  height: 45px; // Increased from original size
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 69, 19, 0.2);
+  border: 2px solid #8b4513;
+  color: #ffd700;
+  font-size: 24px; // Slightly increased font size
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(139, 69, 19, 0.4);
+    transform: scale(1.1);
+  }
+
+  &:active {
+    background: rgba(139, 69, 19, 0.6);
+    transform: scale(0.95);
+  }
+
+  &.up {
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  &.down {
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  &.left {
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  &.right {
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+
+  @media (max-width: 480px) {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+`;
+
+const DPadCenter = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(
+    45deg,
+    rgba(139, 69, 19, 0.6),
+    rgba(139, 69, 19, 0.3)
+  );
+  border: 2px solid #8b4513;
+  border-radius: 50%;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+
+  &:before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    background: #d4af37;
+    border-radius: 50%;
+    box-shadow: 0 0 5px rgba(212, 175, 55, 0.5);
+  }
+`;
+
+const ActionButtonGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(5, 1fr);
+    margin-top: 0;
+    align-items: center;
+  }
+
+  @media (max-width: 480px) {
+    gap: 5px;
+  }
+`;
+
+const ActionButtonWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+
+  @media (max-width: 768px) {
+    gap: 2px;
+  }
+`;
+
+const CooldownOverlay = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: ${props => props.$progress}%;
+  background-color: rgba(255, 0, 0, 0.3);
+  pointer-events: none;
+  transition: height 0.05s linear;
+  border-radius: 6px;
+  overflow: hidden;
+`;
+
+const ActionButton = styled.button`
+  position: relative;
   background: linear-gradient(to bottom, #8b4513, #5c2d0e);
   border: 2px solid #ffd700;
   color: #ffd700;
@@ -299,15 +732,16 @@ const DPadButton = styled.button`
   border-radius: 6px;
   transition: all 0.2s ease;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px;
+  overflow: hidden;
+
   &:hover {
     background: linear-gradient(to bottom, #a25616, #6d3610);
     box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
   }
-  
+
   &:active {
     transform: scale(0.95);
     background: linear-gradient(to bottom, #5c2d0e, #3d1e09);
@@ -318,58 +752,46 @@ const DPadButton = styled.button`
     border-color: #5c2d0e;
     cursor: default;
   }
-`;
-
-const ActionButtonsContainer = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  width: 200px;
-  padding: 5px;
-`;
-
-const ActionButtonGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 12px;
-  width: 100%;
-`;
-
-const ActionButtonWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-`;
-
-const ActionButton = styled(DPadButton)`
-  width: 40px; // Absolute size
-  height: 40px; // Absolute size
-  font-size: 20px;
-  font-weight: bold;
-  font-family: 'MedievalSharp', cursive;
 
   &.active {
-    background: linear-gradient(to bottom, #a25616, #6d3610);
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+    background: linear-gradient(to bottom, #d4af37, #aa8c2c);
     border-color: #ffd700;
-    transform: scale(1.05);
+    color: #2c1810;
+  }
+
+  @media (max-width: 768px) {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+    font-size: 14px;
+  }
+
+  @media (max-width: 480px) {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 4px;
+    font-size: 12px;
   }
 `;
 
 const ButtonLabel = styled.div`
-  color: #ffd700;
-  font-size: 11px;
+  color: #d4af37;
+  font-size: 12px;
   text-align: center;
-  font-family: 'MedievalSharp', cursive;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
+
+  @media (max-width: 768px) {
+    font-size: 10px;
+  }
+
+  @media (max-width: 480px) {
+    font-size: 9px;
+  }
 `;
 
 const StatBar = styled.div`
   width: 100%;
-  height: 20px;
+  height: clamp(12px, 3vh, 20px);
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid #8b4513;
   border-radius: 10px;
@@ -391,15 +813,20 @@ const StatBar = styled.div`
 
 const TimeDisplay = styled.div`
   color: #ffd700;
-  font-size: 24px;
+  font-size: clamp(16px, 3vw, 24px);
   text-align: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   font-family: 'MedievalSharp', cursive;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-  padding: 8px;
+  padding: 6px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
   border: 1px solid #8b4513;
+
+  @media (max-width: 768px) {
+    margin-bottom: 5px;
+    padding: 4px;
+  }
 `;
 
 const ActionButtons = styled.div`
@@ -412,11 +839,11 @@ const ActionButtons = styled.div`
   z-index: 3;
 `;
 
-// Add animation configuration after imports
+// Update animation configuration for more stable timing
 const ANIMATION_CONFIG = {
-  idle: { frames: 2, frameTime: 500 },    // 2 frames per direction, slower
-  walk: { frames: 9, frameTime: 100 },    // 9 frames per direction, medium speed
-  run: { frames: 8, frameTime: 80 }       // 8 frames per direction, fast
+  idle: { frames: 2, frameTime: 500 },
+  walk: { frames: 9, frameTime: 150 },  // Increased frameTime for more stable walk
+  run: { frames: 8, frameTime: 120 }    // Increased frameTime for more stable run
 };
 
 const DIRECTION_MAP = {
@@ -424,12 +851,6 @@ const DIRECTION_MAP = {
   left: 3,
   down: 5,
   right: 7
-};
-
-const ANIMATION_SPEEDS = {
-  idle: 1000,  // 1s per frame
-  walk: 80,    // 80ms per frame
-  run: 60      // 60ms per frame - faster for running
 };
 
 const IDLE_FRAMES = {
@@ -583,78 +1004,207 @@ const InventoryPanel = styled.div`
 const InventoryGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 40px);
-  gap: 6px;
-  padding: 6px;
-  background: rgba(128, 128, 128, 0.3);
-  border: 2px solid #5c2d0e;
-  border-radius: 2px;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 6px;
   margin: 0 auto;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(6, 40px);
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(4, 35px);
+    gap: 5px;
+  }
 `;
 
 const InventorySlot = styled.div`
   width: 40px;
   height: 40px;
-  background: rgba(139, 69, 19, 0.3);
+  background: rgba(139, 69, 19, 0.2);
   border: 2px solid #3d1e09;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   
   &:hover {
-    background: rgba(139, 69, 19, 0.5);
-    border-color: #8b4513;
+    background: rgba(139, 69, 19, 0.4);
+    border-color: #ffd700;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 
   img {
-    max-width: 36px;
-    max-height: 36px;
+    max-width: 32px;
+    max-height: 32px;
     image-rendering: pixelated;
+    transition: transform 0.2s ease;
+  }
+
+  &:hover img {
+    transform: scale(1.1);
+  }
+
+  @media (max-width: 480px) {
+    width: 35px;
+    height: 35px;
+
+    img {
+      max-width: 28px;
+      max-height: 28px;
+    }
+  }
+`;
+
+const ItemCount = styled.div`
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 12px;
+  color: #ffffff;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.8);
+  font-weight: bold;
+`;
+
+const DurabilityBar = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.5);
+  
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: ${props => props.$durability}%;
+    background: ${props => {
+      if (props.$durability > 66) return '#44ff44';
+      if (props.$durability > 33) return '#ffaa44';
+      return '#ff4444';
+    }};
+  }
+`;
+
+const ItemTooltip = styled.div`
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(44, 24, 16, 0.95);
+  border: 1px solid #8b4513;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #ffffff;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+
+  ${InventorySlot}:hover & {
+    opacity: 1;
   }
 `;
 
 const ArmorAndPlayerSection = styled.div`
   display: flex;
-  gap: 6px;
+  gap: 10px;
   justify-content: center;
-  margin-bottom: 8px;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(139, 69, 19, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(139, 69, 19, 0.3);
 `;
 
 const ArmorGrid = styled.div`
   display: grid;
   grid-template-rows: repeat(4, 40px);
-  gap: 6px;
-  padding: 6px;
-  background: rgba(128, 128, 128, 0.3);
-  border: 2px solid #5c2d0e;
-  border-radius: 2px;
-  width: 52px; // 40px slot + 6px padding * 2
+  gap: 8px;
+  padding: 8px;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 6px;
+  width: 56px;
 `;
 
 const PlayerPreview = styled.div`
-  width: 117px; // Previous width (111.25px) + 5%
-  height: 175.5px; // Previous height (167px) + 5%
-  background: rgba(128, 128, 128, 0.3);
-  border: 2px solid #5c2d0e;
-  border-radius: 2px;
+  width: 117px;
+  height: 175.5px;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+  
+  &:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(
+      circle at center,
+      transparent 30%,
+      rgba(44, 24, 16, 0.4) 100%
+    );
+    pointer-events: none;
+  }
   
   img {
-    height: 138px; // Previous height (131.25px) + 5%
+    height: 138px;
     width: auto;
     image-rendering: pixelated;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
   }
 `;
 
 const InventoryTitle = styled.div`
-  color: #ffd700;
-  font-size: 16px;
+  color: #d4af37;
+  font-size: 18px;
   text-align: center;
-  margin-bottom: 4px;
-  text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
+  margin-bottom: 15px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  font-weight: bold;
+  position: relative;
+  padding-bottom: 10px;
+
+  &:after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 25%;
+    width: 50%;
+    height: 2px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      #8b4513,
+      #d4af37,
+      #8b4513,
+      transparent
+    );
+  }
 `;
 
 const ToggleButton = styled.button`
@@ -682,287 +1232,684 @@ const ToggleButton = styled.button`
   }
 `;
 
-const MarkerTools = styled.div`
+const MAP_SCALE = 0.4; // 40% dari ukuran asli
+
+const MapPopup = styled.div`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: fit-content;
+  height: fit-content;
+  background: #2c1810;
+  border: 4px solid #8b4513;
+  z-index: 1100;
+  display: ${props => props.$show ? 'flex' : 'none'};
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+
+  .map-container {
+    position: relative;
+    width: ${MAP_DIMENSIONS.width * MAP_SCALE}px;
+    height: ${MAP_DIMENSIONS.height * MAP_SCALE}px;
+    transform-origin: top left;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+`;
+
+const PlayerLocationMarker = styled.div.attrs(props => ({
+  style: {
+    left: `${props.$x * MAP_SCALE}px`,
+    top: `${props.$y * MAP_SCALE}px`
+  }
+}))`
   position: absolute;
-  top: 60px;
-  left: 10px;
+  width: 8px;
+  height: 8px;
+  background: #ff0000;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  transform: translate(-50%, -50%);
+  z-index: 1100;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+`;
+
+const CloseMapButton = styled.button`
+  position: absolute;
+  top: 10px;
+  right: 10px;
   background: rgba(44, 24, 16, 0.9);
   border: 2px solid #8b4513;
+  border-radius: 50%;
+  color: #ffd700;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1101;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  
+  &:hover {
+    background: #8b4513;
+    color: #fff;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const MapOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  z-index: 1099;
+  display: ${props => props.$show ? 'block' : 'none'};
+`;
+
+// Update collision constants
+const COLLISION_OFFSET = {
+  x: 6,  // Center the collision box (18px sprite width - 6px collision width) / 2
+  y: 20  // Position at character's feet (24px height - 4px collision height)
+};
+
+const CHARACTER_COLLISION_BOX = {
+  width: 6,   // Small area for feet
+  height: 4   // Very small height for just the feet area
+};
+
+// Update debug box to be more visible
+const CollisionDebugBox = styled.div.attrs(props => ({
+  style: {
+    left: `${props.x}px`,
+    top: `${props.y}px`
+  }
+}))`
+  position: absolute;
+  width: ${CHARACTER_COLLISION_BOX.width}px;
+  height: ${CHARACTER_COLLISION_BOX.height}px;
+  border: 1px solid #ff0000;
+  background: rgba(255, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 1000;
+`;
+
+// Add this after other styled components
+const LocationNotification = styled.div`
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(44, 24, 16, 0.9);
+  border: 2px solid #8b4513;
+  padding: 10px 20px;
+  color: #ffd700;
+  border-radius: 8px;
+  font-family: 'MedievalSharp', cursive;
+  font-size: 18px;
+  z-index: 1000;
+  opacity: ${props => props.$show ? 1 : 0};
+  transition: opacity 0.3s ease-in-out;
+  pointer-events: none;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+`;
+
+const CharacterHeader = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 15px;
-  border-radius: 4px;
-  z-index: 100;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 8px;
+  margin-bottom: 20px;
+`;
+
+const CharacterTitle = styled.h2`
+  color: #ffd700;
+  font-size: 24px;
+  margin: 0;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  letter-spacing: 1px;
+`;
+
+const CharacterSubtitle = styled.h3`
+  color: #d4af37;
+  font-size: 18px;
+  margin: 5px 0 0 0;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  font-style: italic;
+`;
+
+const CharacterStatsSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 15px;
-  min-width: 250px;
+  padding: 15px;
+  background: rgba(44, 24, 16, 0.6);
+  border: 1px solid #8b4513;
+  border-radius: 8px;
+  margin-bottom: 20px;
 `;
 
-const ToolSection = styled.div`
+const RelicSection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
-`;
-
-const ToolLabel = styled.label`
-  color: #ffd700;
-  font-size: 14px;
-  margin-bottom: 4px;
-`;
-
-const Select = styled.select`
-  padding: 5px;
-  background: #2c1810;
-  color: #ffd700;
+  gap: 10px;
+  padding: 15px;
+  background: rgba(44, 24, 16, 0.6);
   border: 1px solid #8b4513;
+  border-radius: 8px;
+  margin-bottom: 20px;
+`;
+
+const RelicTitle = styled.h3`
+  color: #ffd700;
+  font-size: 18px;
+  margin: 0 0 10px 0;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  letter-spacing: 1px;
+  border-bottom: 1px solid #8b4513;
+  padding-bottom: 10px;
+`;
+
+const RelicContainer = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px;
+`;
+
+const RelicBox = styled.div`
+  width: 30px;
+  height: 30px;
+  background: ${props => props.$obtained ? 'rgba(255, 215, 0, 0.3)' : 'rgba(139, 69, 19, 0.2)'};
+  border: 2px solid ${props => props.$obtained ? '#ffd700' : '#8b4513'};
   border-radius: 4px;
+  transition: all 0.3s ease;
+  box-shadow: ${props => props.$obtained ? '0 0 10px rgba(255, 215, 0, 0.3)' : 'none'};
   
-  &:focus {
-    outline: none;
-    border-color: #ffd700;
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
   }
 `;
 
-const Input = styled.input`
-  padding: 5px;
+const VisitMenuOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+`;
+
+const VisitMenu = styled.div`
+  width: 600px;
   background: #2c1810;
+  border: 3px solid #8b4513;
+  border-radius: 15px;
+  padding: 20px;
   color: #ffd700;
-  border: 1px solid #8b4513;
-  border-radius: 4px;
-  
-  &:focus {
-    outline: none;
-    border-color: #ffd700;
+  position: relative;
+`;
+
+const VisitMenuTitle = styled.h2`
+  text-align: center;
+  color: #ffd700;
+  font-size: 24px;
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  border-bottom: 2px solid #8b4513;
+  padding-bottom: 10px;
+`;
+
+const VisitMenuDescription = styled.p`
+  color: #d4af37;
+  font-size: 16px;
+  margin-bottom: 20px;
+  text-align: center;
+  font-style: italic;
+`;
+
+const VisitOptionList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 10px;
+
+  &::-webkit-scrollbar {
+    width: 8px;
   }
 
-  &[type="range"] {
-    width: 100%;
-    height: 8px;
-    -webkit-appearance: none;
-    background: #2c1810;
-    border: 1px solid #8b4513;
+  &::-webkit-scrollbar-track {
+    background: rgba(139, 69, 19, 0.1);
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #8b4513;
     border-radius: 4px;
     
-    &::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      background: #ffd700;
-      border-radius: 50%;
-      cursor: pointer;
+    &:hover {
+      background: #d4af37;
     }
   }
 `;
 
-const SizeDisplay = styled.div`
-  color: #ffd700;
-  font-size: 12px;
-  text-align: right;
-  margin-top: 4px;
-`;
-
-const CoordinateDisplay = styled.div`
-  position: absolute;
-  top: 10px;
-  left: 200px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #ffd700;
-  padding: 5px 10px;
-  border-radius: 4px;
-  font-family: monospace;
-  z-index: 10;
+const VisitOption = styled.button`
+  background: rgba(139, 69, 19, 0.2);
   border: 1px solid #8b4513;
-`;
-
-const LocationMarker = styled.div`
-  position: absolute;
-  width: ${props => props.size}px;
-  height: ${props => props.size}px;
-  background: ${props => props.background || 'rgba(255, 215, 0, 0.3)'};
-  border: 2px solid ${props => props.borderColor || '#ffd700'};
-  border-radius: ${props => props.shape === 'circle' ? '50%' : props.shape === 'square' ? '0' : '8px'};
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-  z-index: 5;
-  
-  &:hover {
-    background: ${props => props.background ? props.background.replace('0.3', '0.5') : 'rgba(255, 215, 0, 0.5)'};
-  }
-
-  &::after {
-    content: '${props => props.label}';
-    position: absolute;
-    top: -25px;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
-    color: #ffd700;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-    font-size: 12px;
-  }
-`;
-
-const ExportButton = styled.button`
-  position: absolute;
-  top: 10px;
-  left: 150px;
-  background: #2c1810;
+  border-radius: 8px;
+  padding: 15px;
   color: #ffd700;
-  border: 2px solid #8b4513;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: 'MedievalSharp', cursive;
-  z-index: 100;
+  text-align: left;
   transition: all 0.2s ease;
-  display: ${props => props.show ? 'block' : 'none'};
+  display: flex;
+  align-items: center;
+  gap: 10px;
 
   &:hover {
-    background: #3d2315;
-    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+    background: rgba(139, 69, 19, 0.4);
+    transform: translateX(5px);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    &:hover {
+      transform: none;
+    }
   }
 `;
 
-const ClearButton = styled.button`
+const VisitOptionIcon = styled.span`
+  font-size: 20px;
+  min-width: 24px;
+  text-align: center;
+`;
+
+const ItemPopup = styled.div`
   position: absolute;
-  top: 10px;
-  left: 300px;
-  background: #8b4513;
-  color: #ffd700;
-  border: 2px solid #ffd700;
-  padding: 8px 16px;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(44, 24, 16, 0.95);
+  border: 1px solid #8b4513;
   border-radius: 4px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 1001;
+`;
+
+const PopupButton = styled.button`
+  background: rgba(139, 69, 19, 0.2);
+  border: 1px solid #8b4513;
+  color: #ffd700;
+  padding: 4px 8px;
   cursor: pointer;
-  font-family: 'MedievalSharp', cursive;
-  z-index: 100;
   transition: all 0.2s ease;
-  display: ${props => props.show ? 'block' : 'none'};
 
   &:hover {
-    background: #a25616;
-    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+    background: rgba(139, 69, 19, 0.4);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 `;
 
 const World = () => {
   const { selectedCharacter, characterStats, playerName, clearGameData } = useGame();
   const navigate = useNavigate();
-  const [position, setPosition] = useState({ x: 100, y: 100 });
+  
+  // Change initial position to null
+  const [position, setPosition] = useState(null);
   const [direction, setDirection] = useState('down');
   const [movement, setMovement] = useState('idle');
   const [frame, setFrame] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
-  const [currentStats, setCurrentStats] = useState(characterStats);
+  const [currentStats, setCurrentStats] = useState({
+    ...characterStats,
+    defense: characterStats.armor,
+    maxHp: characterStats.hp
+  });
   const [useSecondFrame, setUseSecondFrame] = useState(false);
   const [walkFrame, setWalkFrame] = useState(0);
   const [runFrame, setRunFrame] = useState(0);
+  const [gameTime, setGameTime] = useState({ hours: 6, minutes: 0 });
+  
+  // Add baseStats state
+  const [baseStats, setBaseStats] = useState({
+    ...characterStats,
+    defense: characterStats.armor,
+    maxHp: characterStats.hp
+  });
+  
+  // Add equipmentBonuses state
+  const [equipmentBonuses, setEquipmentBonuses] = useState({
+    damage: 0,
+    defense: 0,
+    hp: 0,
+    maxHp: 0
+  });
+
+  const [currentStamina, setCurrentStamina] = useState(characterStats.stamina);
+  const [currentHunger, setCurrentHunger] = useState(characterStats.hunger);
+  const [showInventory, setShowInventory] = useState(false);
+  const [isNight, setIsNight] = useState(false);
+  const [isSprintCooldown, setIsSprintCooldown] = useState(false);
+  const [cooldownProgress, setCooldownProgress] = useState(0);
+  const [showMap, setShowMap] = useState(false);
+  const [showContainerShown, setShowContainerShown] = useState(false);
+  const [containerContent, setContainerContent] = useState('');
+  const [showDebug, setShowDebug] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [loadedSprites, setLoadedSprites] = useState(new Set());
+  const [isLongIdle, setIsLongIdle] = useState(false);
+  const [playerGold, setPlayerGold] = useState(1000); // Add initial gold amount
+  const [inventory, setInventory] = useState({
+    main: Array(16).fill(null).map(() => ({
+      id: null,
+      name: null,
+      icon: null,
+      count: 0,
+      durability: 100,
+      type: null
+    })),
+    armor: Array(4).fill(null).map(() => ({
+      id: null,
+      name: null,
+      icon: null,
+      durability: 100,
+      type: null
+    }))
+  });
+  const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
+  const [mapPosition, setMapPosition] = useState({ x: -50, y: -50 });
+  const [obtainedRelics, setObtainedRelics] = useState(Array(8).fill(false));
+  const [showVisitMenu, setShowVisitMenu] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [currentShop, setCurrentShop] = useState('');
+  const [showLodge, setShowLodge] = useState(false);
+  const [showDialog, setShowDialog] = useState(false);
+  const [dialogContent, setDialogContent] = useState(null);
+  const [purchaseInProgress, setPurchaseInProgress] = useState(false);
+  const [purchaseMessage, setPurchaseMessage] = useState('');
+
+  // Add loading state
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Add equipment slots state and selected item state
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [equipmentSlots, setEquipmentSlots] = useState({
+    helmet: null,
+    bodyArmor: null,
+    weapon: null,
+    shield: null
+  });
+
+  // Add timeOfDay state
+  const [timeOfDay, setTimeOfDay] = useState('day');
+  const [isPaused, setIsPaused] = useState(false);
+  const [isRunToggled, setIsRunToggled] = useState(false);
+  const [showDetailedStats, setShowDetailedStats] = useState(false);
+
+  // Function to check if an item can be equipped in a slot
+  const canEquipInSlot = (item, slotName) => {
+    if (!item || !item.type) return false;
+    
+    const slotTypes = {
+      helmet: ['helmet'],
+      bodyArmor: ['armor'],
+      weapon: ['sword', 'weapon'],
+      shield: ['shield']
+    };
+    return slotTypes[slotName]?.includes(item.type);
+  };
+
+  // Function to get slot name from index
+  const getSlotNameFromIndex = (index) => {
+    const slotMap = {
+      0: 'helmet',
+      1: 'bodyArmor',
+      2: 'weapon',
+      3: 'shield'
+    };
+    return slotMap[index];
+  };
+
+  // Update the calculateEquipmentBonuses function
+  const calculateEquipmentBonuses = (slots) => {
+    const bonuses = {
+      damage: 0,
+      defense: 0,
+      hp: 0,
+      maxHp: 0
+    };
+
+    Object.values(slots).forEach(item => {
+      if (item && item.stats) {
+        Object.entries(item.stats).forEach(([stat, value]) => {
+          switch(stat) {
+            case 'damage':
+              bonuses.damage += value;
+              break;
+            case 'defense':
+              bonuses.defense += value;
+              break;
+            case 'hp':
+              bonuses.hp += value;
+              bonuses.maxHp += value;
+              break;
+          }
+        });
+      }
+    });
+
+    return bonuses;
+  };
+
+  // Function to handle equipping items
+  const handleEquipItem = (item, slotName) => {
+    if (!item || !slotName) return;
+
+    // Remove item from inventory
+    const newInventory = [...inventory.main];
+    const itemIndex = newInventory.findIndex(i => i === item);
+    if (itemIndex === -1) return;
+    
+    newInventory[itemIndex] = null;
+
+    // If there was an item in the slot, put it back in inventory
+    const oldItem = equipmentSlots[slotName];
+    if (oldItem) {
+      const emptySlot = newInventory.findIndex(i => !i);
+      if (emptySlot !== -1) {
+        newInventory[emptySlot] = oldItem;
+      }
+    }
+
+    // Update equipment slots
+    const newEquipmentSlots = {
+      ...equipmentSlots,
+      [slotName]: item
+    };
+    setEquipmentSlots(newEquipmentSlots);
+
+    // Update inventory
+    setInventory({
+      ...inventory,
+      main: newInventory
+    });
+
+    // Calculate and update bonuses
+    const newBonuses = calculateEquipmentBonuses(newEquipmentSlots);
+    setEquipmentBonuses(newBonuses);
+    
+    // Update character stats with equipment bonuses using baseStats
+    setCurrentStats({
+      ...baseStats,
+      damage: baseStats.damage + newBonuses.damage,
+      defense: baseStats.defense + newBonuses.defense,
+      hp: baseStats.hp + newBonuses.hp,
+      maxHp: baseStats.maxHp + newBonuses.maxHp
+    });
+
+    // Clear selected item
+    setSelectedItem(null);
+  };
+
+  // Function to handle unequipping items
+  const handleUnequipItem = (slotName) => {
+    const item = equipmentSlots[slotName];
+    if (!item) return;
+
+    // Find empty inventory slot
+    const newInventory = [...inventory.main];
+    const emptySlot = newInventory.findIndex(i => !i);
+    if (emptySlot === -1) return; // Inventory full
+
+    // Move item to inventory
+    newInventory[emptySlot] = item;
+    setInventory({
+      ...inventory,
+      main: newInventory
+    });
+
+    // Clear equipment slot
+    const newEquipmentSlots = {
+      ...equipmentSlots,
+      [slotName]: null
+    };
+    setEquipmentSlots(newEquipmentSlots);
+
+    // Recalculate bonuses
+    const newBonuses = calculateEquipmentBonuses(newEquipmentSlots);
+    setEquipmentBonuses(newBonuses);
+    
+    // Update character stats using baseStats
+    setCurrentStats({
+      ...baseStats,
+      damage: baseStats.damage + newBonuses.damage,
+      defense: baseStats.defense + newBonuses.defense,
+      hp: baseStats.hp + newBonuses.hp,
+      maxHp: baseStats.maxHp + newBonuses.maxHp
+    });
+  };
+
+  // Function to handle discarding items
+  const handleDiscardItem = (item) => {
+    if (!item) return;
+    
+    const newInventory = [...inventory.main];
+    const itemIndex = newInventory.findIndex(i => i === item);
+    if (itemIndex !== -1) {
+      newInventory[itemIndex] = null;
+      setInventory({
+        ...inventory,
+        main: newInventory
+      });
+    }
+    setSelectedItem(null);
+  };
+
+  // Group all useRef declarations
   const walkTimer = useRef(null);
   const runTimer = useRef(null);
-  const [gameTime, setGameTime] = useState({ hours: 6, minutes: 0 }); // Start at 6:00
   const gameTimeRef = useRef(null);
-  
   const characterRef = useRef(null);
   const mapRef = useRef(null);
   const keysPressed = useRef({});
-  
-  const BASE_MOVEMENT_SPEED = 1.75; // Adjusted for new sprite size (18x24)
-  const [loadedSprites, setLoadedSprites] = useState(new Set());
   const spriteCacheRef = useRef({});
-  const [isLongIdle, setIsLongIdle] = useState(false);
   const lastMovementTime = useRef(Date.now());
   const longIdleTimer = useRef(null);
-  const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
   const mapContainerRef = useRef(null);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isRunToggled, setIsRunToggled] = useState(false);
-  const isShiftPressed = useRef(false);
-  const [showDetailedStats, setShowDetailedStats] = useState(false);
-  const [currentStamina, setCurrentStamina] = useState(characterStats.stamina);
   const staminaTimer = useRef(null);
-  const STAMINA_DRAIN_RATE = 5; // Stamina points drained per second while sprinting
-  const STAMINA_REGEN_RATE = 3; // Stamina points regenerated per second while not sprinting
-  const [currentHunger, setCurrentHunger] = useState(characterStats.hunger);
   const hungerTimer = useRef(null);
-  const HUNGER_DECREASE_RATE = 0.75; // Hunger points decreased per 30 seconds
-  const [showInventory, setShowInventory] = useState(false);
-  const [inventory, setInventory] = useState({
-    main: Array(16).fill(null), // 4x4 grid
-    armor: Array(4).fill(null) // head, chest, legs, feet
-  });
-  const [isMarkingMode, setIsMarkingMode] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [markers, setMarkers] = useState([]);
-  const [devMarkers, setDevMarkers] = useState([]);
-  const [selectedMarkerType, setSelectedMarkerType] = useState('shop');
-  const [markerName, setMarkerName] = useState('');
-  const [markerSize, setMarkerSize] = useState(32);
-  const [markerShape, setMarkerShape] = useState('circle');
-  const [isNight, setIsNight] = useState(false);
+  const cooldownTimer = useRef(null);
+  const gameLoopId = useRef(null);
+  const lastFrameTimeRef = useRef(null);
+  const isShiftPressed = useRef(false);
+  const lastUpdateTime = useRef(0);
+  const targetMapPosition = useRef({ x: -50, y: -50 });
+  const animationFrameId = useRef(null);
+  const accumulator = useRef(0);
+  const lastTime = useRef(0);
 
-  const markerTypes = {
-    shop: { label: 'Shop', color: '#ffd700' },
-    inn: { label: 'Inn', color: '#4caf50' },
-    quest: { label: 'Quest', color: '#2196f3' },
-    dungeon: { label: 'Dungeon', color: '#f44336' }
+  // Constants
+  const STAMINA_DRAIN_RATE = 15;
+  const STAMINA_REGEN_RATE = 10;
+  const HUNGER_DECREASE_RATE = 0.75;
+  
+  // Add lerp function
+  const lerp = (start, end, factor) => {
+    if (Math.abs(end - start) < MIN_MOVEMENT_THRESHOLD) {
+      return end;
+    }
+    return start + (end - start) * factor;
   };
 
-  const handleMouseMove = useCallback((e) => {
-    if (!mapContainerRef.current) return;
-    const rect = mapContainerRef.current.getBoundingClientRect();
-    const x = Math.round(e.clientX - rect.left);
-    const y = Math.round(e.clientY - rect.top);
-    setMousePos({ x, y });
-  }, []);
+  // Separate animation loop for map movement
+  useEffect(() => {
+    const updateMapPosition = () => {
+      if (!position) return; // Add null check
 
-  const handleMapClick = useCallback((e) => {
-    if (!isMarkingMode || !mapContainerRef.current) return;
-    
-    const rect = mapContainerRef.current.getBoundingClientRect();
-    const x = Math.round(e.clientX - rect.left);
-    const y = Math.round(e.clientY - rect.top);
-    
-    if (markerName.trim()) {
-      const newMarker = {
-        id: Date.now().toString(),
-        x,
-        y,
-        type: selectedMarkerType,
-        name: markerName,
-        size: markerSize,
-        shape: markerShape
+      const targetX = -(position.x - VIEWPORT_WIDTH/2);
+      const targetY = -(position.y - VIEWPORT_HEIGHT/2);
+      
+      targetMapPosition.current = {
+        x: targetX,
+        y: targetY
       };
-      setMarkers(prev => [...prev, newMarker]);
-      setMarkerName('');
+
+      setMapPosition(prev => ({
+        x: lerp(prev.x, targetMapPosition.current.x, MOVEMENT_SMOOTHING),
+        y: lerp(prev.y, targetMapPosition.current.y, MOVEMENT_SMOOTHING)
+      }));
+
+      animationFrameId.current = requestAnimationFrame(updateMapPosition);
+    };
+
+    if (!isPaused && !showMap) {
+      animationFrameId.current = requestAnimationFrame(updateMapPosition);
     }
-  }, [isMarkingMode, selectedMarkerType, markerName, markerSize, markerShape]);
 
-  const removeMarker = (markerId) => {
-    setMarkers(prev => prev.filter(marker => marker.id !== markerId));
-  };
-
-  const clearAllMarkers = () => {
-    if (window.confirm('Are you sure you want to clear all markers?')) {
-      setMarkers([]);
-    }
-  };
-
-  const exportMarkers = () => {
-    const markersJson = JSON.stringify(markers, null, 2);
-    
-    // Create blob and download
-    const blob = new Blob([markersJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'game_locations.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    // Also log to console for easy copying
-    console.log('Game Locations JSON:');
-    console.log(markersJson);
-  };
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, [position, isPaused, showMap]);
 
   // Idle animation timer
   useEffect(() => {
@@ -1041,30 +1988,49 @@ const World = () => {
     await Promise.all(loadPromises);
   };
 
-  // Animation handlers with RAF
+  // Update the animation effect for smoother frame transitions
   useEffect(() => {
-    let animationFrameId;
     let lastFrameTime = 0;
+    let accumulatedTime = 0;
+    let animationFrameId;
     
     const animate = (timestamp) => {
-      if (!lastFrameTime) lastFrameTime = timestamp;
+      if (!lastFrameTime) {
+        lastFrameTime = timestamp;
+        animationFrameId = requestAnimationFrame(animate);
+        return;
+      }
+
       const deltaTime = timestamp - lastFrameTime;
-      
-      if (movement === 'walk' && deltaTime >= ANIMATION_SPEEDS.walk) {
-        setWalkFrame(prev => (prev + 1) % 9);
-        lastFrameTime = timestamp;
-      } else if (movement === 'run' && deltaTime >= ANIMATION_SPEEDS.run) {
-        setRunFrame(prev => (prev + 1) % 8);
-        lastFrameTime = timestamp;
+      accumulatedTime += deltaTime;
+
+      const config = ANIMATION_CONFIG[movement];
+      if (config) {
+        const frameTime = config.frameTime;
+        
+        if (accumulatedTime >= frameTime) {
+          const framesToAdvance = Math.floor(accumulatedTime / frameTime);
+          
+          if (movement === 'walk') {
+            setWalkFrame(prev => (prev + framesToAdvance) % config.frames);
+          } else if (movement === 'run') {
+            setRunFrame(prev => (prev + framesToAdvance) % config.frames);
+          }
+          
+          accumulatedTime = accumulatedTime % frameTime;
+        }
       }
       
+      lastFrameTime = timestamp;
       animationFrameId = requestAnimationFrame(animate);
     };
-    
+
     if (movement === 'walk' || movement === 'run') {
+      lastFrameTime = 0;
+      accumulatedTime = 0;
       animationFrameId = requestAnimationFrame(animate);
     }
-    
+
     return () => {
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
@@ -1113,42 +2079,50 @@ const World = () => {
     console.log('Is long idle:', isLongIdle);
   }, [isLongIdle, movement, direction]);
 
-  const getCharacterSprite = () => {
+  // Update getCharacterSprite to ensure consistent frame selection
+  const getCharacterSprite = useCallback(() => {
     if (!selectedCharacter) return '';
     
     const characterClass = selectedCharacter.name;
     
-    // If in long idle state, use the sit sprite
     if (isLongIdle && movement === 'idle') {
       const baseDir = `/assets/${characterClass}PC/${characterClass}Sit`;
       const frame = LONG_IDLE_FRAMES[direction];
-      const spritePath = `${baseDir}/sit${frame}.png`;
-      console.log('Using sit sprite:', spritePath); // Debug log
-      return spritePath;
+      return `${baseDir}/sit${frame}.png`;
     }
+    
+    const baseDir = `/assets/${characterClass}PC/${characterClass}${movement.charAt(0).toUpperCase() + movement.slice(1)}`;
+    let frameNumber;
     
     switch (movement) {
       case 'run':
-        const runBaseDir = `/assets/${characterClass}PC/${characterClass}Run`;
-        const runFrames = RUN_FRAMES[direction];
-        return `${runBaseDir}/run${runFrames[runFrame]}.png`;
+        frameNumber = RUN_FRAMES[direction][runFrame];
+        break;
       case 'walk':
-        const walkBaseDir = `/assets/${characterClass}PC/${characterClass}Walk`;
-        const walkFrames = WALK_FRAMES[direction];
-        return `${walkBaseDir}/walk${walkFrames[walkFrame]}.png`;
-      default: // normal idle
-        const idleBaseDir = `/assets/${characterClass}PC/${characterClass}Idle`;
-        const [firstFrame, secondFrame] = IDLE_FRAMES[direction];
-        return `${idleBaseDir}/idle${useSecondFrame ? secondFrame : firstFrame}.png`;
+        frameNumber = WALK_FRAMES[direction][walkFrame];
+        break;
+      default:
+        frameNumber = IDLE_FRAMES[direction][useSecondFrame ? 1 : 0];
     }
-  };
+    
+    return `${baseDir}/${movement}${frameNumber}.png`;
+  }, [selectedCharacter, movement, direction, isLongIdle, runFrame, walkFrame, useSecondFrame]);
 
   useEffect(() => {
     if (!selectedCharacter) {
       navigate('/');
       return;
     }
-    setCurrentStats(characterStats);
+    setBaseStats({
+      ...characterStats,
+      defense: characterStats.armor,
+      maxHp: characterStats.hp
+    });
+    setCurrentStats({
+      ...characterStats,
+      defense: characterStats.armor,
+      maxHp: characterStats.hp
+    });
     setCurrentStamina(characterStats.stamina);
     setCurrentHunger(characterStats.hunger);
   }, [selectedCharacter, characterStats, navigate]);
@@ -1160,16 +2134,23 @@ const World = () => {
 
   // Handle restart
   const handleRestart = () => {
-    setPosition({ x: 100, y: 100 }); // Reset to initial position
+    const spawnPoint = spawnManager.getRandomSpawnPoint();
+    setPosition(spawnPoint);
+    setMapPosition({
+      x: -(spawnPoint.x - VIEWPORT_WIDTH/2),
+      y: -(spawnPoint.y - VIEWPORT_HEIGHT/2)
+    });
     setDirection('down');
     setMovement('idle');
     setIsRunning(false);
+    setGameTime({ hours: 6, minutes: 0 }); // Reset time to 6:00
     setIsPaused(false);
   };
 
   // Handle exit to main menu
   const handleExitToMainMenu = () => {
     clearGameData();
+    // The next time the game starts, it will use a new spawn point
     navigate('/');
   };
 
@@ -1178,7 +2159,7 @@ const World = () => {
     setIsRunToggled(prev => !prev);
   };
 
-  // Add keyboard event handlers for pause
+  // Update keyboard event handlers
   useEffect(() => {
     const handleKeyDown = (e) => {
       keysPressed.current[e.key.toLowerCase()] = true;
@@ -1186,10 +2167,45 @@ const World = () => {
         isShiftPressed.current = true;
       }
       if (e.key.toLowerCase() === 'escape') {
-        togglePause();
+        if (showMap) {
+          setShowMap(false);
+        } else {
+          togglePause();
+        }
       }
       if (e.key.toLowerCase() === 'r') {
         toggleRun();
+      }
+      if (e.key.toLowerCase() === 'm') {
+        setShowMap(prev => !prev);
+      }
+      if (e.key.toLowerCase() === 'i') {
+        setShowContainerShown(true);
+        if (showInventory) {
+          setShowInventory(false);
+          if (!showDetailedStats) setShowContainerShown(false);
+        } else {
+          setShowInventory(true);
+          setContainerContent('inventory');
+        }
+      }
+      if (e.key.toLowerCase() === 't') {
+        setShowContainerShown(true);
+        if (showDetailedStats) {
+          setShowDetailedStats(false);
+          if (!showInventory) setShowContainerShown(false);
+        } else {
+          setShowDetailedStats(true);
+          setContainerContent('stats');
+        }
+      }
+      
+      // Add F3 key for debug toggle
+      if (e.key === 'F3') {
+        setShowDebug(prev => !prev);
+      }
+      if (e.key.toLowerCase() === 'e') {
+        handleInteract();
       }
     };
 
@@ -1207,42 +2223,210 @@ const World = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [showMap, showInventory, showDetailedStats, currentLocation]);
 
-  // Update isRunning based on either shift or toggle
+  // Game loop function using useCallback
+  const gameLoop = useCallback((timestamp) => {
+    if (!position || isPaused || showMap) {
+      lastTime.current = 0;
+      accumulator.current = 0;
+      return;
+    }
+
+    if (!lastTime.current) {
+      lastTime.current = timestamp;
+      gameLoopId.current = requestAnimationFrame(gameLoop);
+      return;
+    }
+
+    let frameTime = timestamp - lastTime.current;
+    lastTime.current = timestamp;
+
+    if (frameTime > MAX_FRAME_TIME) {
+      frameTime = MAX_FRAME_TIME;
+    }
+
+    accumulator.current += frameTime;
+
+    while (accumulator.current >= FIXED_TIMESTEP) {
+      const keys = keysPressed.current;
+      let newX = position.x;
+      let newY = position.y;
+      let newDirection = direction;
+      let isMoving = false;
+
+      const canSprint = currentStamina > STAMINA_THRESHOLD && !isSprintCooldown;
+      const isCharacterFast = selectedCharacter?.stats?.speed === 2.5;
+      const speedMultiplier = canSprint && (isShiftPressed.current || isRunToggled) 
+        ? (isCharacterFast ? SPEED_MULTIPLIERS.run.fast : SPEED_MULTIPLIERS.run.normal)
+        : SPEED_MULTIPLIERS.walk;
+
+      const speed = Math.floor((BASE_MOVEMENT_SPEED * speedMultiplier * FIXED_TIMESTEP) / 16.67);
+
+      // Store original position for collision checking
+      const originalX = newX;
+      const originalY = newY;
+
+      // Handle movement with proper boundaries
+      if (keys['w'] || keys['arrowup']) {
+        newY = Math.max(0, newY - speed);
+        newDirection = 'up';
+        isMoving = true;
+      }
+      if (keys['s'] || keys['arrowdown']) {
+        newY = Math.min(MAP_DIMENSIONS.height - CHARACTER_HEIGHT, newY + speed);
+        newDirection = 'down';
+        isMoving = true;
+      }
+      if (keys['a'] || keys['arrowleft']) {
+        newX = Math.max(0, newX - speed);
+        newDirection = 'left';
+        isMoving = true;
+      }
+      if (keys['d'] || keys['arrowright']) {
+        newX = Math.min(MAP_DIMENSIONS.width - CHARACTER_WIDTH, newX + speed);
+        newDirection = 'right';
+        isMoving = true;
+      }
+
+      // Normalize diagonal movement
+      if (isMoving && 
+          ((keys['w'] || keys['arrowup'] || keys['s'] || keys['arrowdown']) && 
+           (keys['a'] || keys['arrowleft'] || keys['d'] || keys['arrowright']))) {
+        const diagonalFactor = 1 / Math.sqrt(2);
+        const dx = newX - position.x;
+        const dy = newY - position.y;
+        newX = Math.floor(position.x + dx * diagonalFactor);
+        newY = Math.floor(position.y + dy * diagonalFactor);
+
+        // Re-check boundaries after diagonal movement
+        newX = Math.max(0, Math.min(MAP_DIMENSIONS.width - CHARACTER_WIDTH, newX));
+        newY = Math.max(0, Math.min(MAP_DIMENSIONS.height - CHARACTER_HEIGHT, newY));
+      }
+
+      // Check collision at new position with offset
+      if (isMoving) {
+        // Check X and Y movement separately to allow sliding along walls
+        const collideX = collisionManager.checkCollision(
+          newX + COLLISION_OFFSET.x, 
+          originalY + COLLISION_OFFSET.y,
+          CHARACTER_COLLISION_BOX.width,
+          CHARACTER_COLLISION_BOX.height
+        );
+        
+        const collideY = collisionManager.checkCollision(
+          originalX + COLLISION_OFFSET.x,
+          newY + COLLISION_OFFSET.y,
+          CHARACTER_COLLISION_BOX.width,
+          CHARACTER_COLLISION_BOX.height
+        );
+
+        // If there's collision, revert to original position
+        if (collideX) newX = originalX;
+        if (collideY) newY = originalY;
+
+        // Only update position and movement if we actually moved
+        if (newX !== originalX || newY !== originalY) {
+        setPosition({ x: newX, y: newY });
+
+        // Update camera position to follow player
+        const targetCameraX = Math.floor(newX - VIEWPORT_WIDTH/2);
+        const targetCameraY = Math.floor(newY - VIEWPORT_HEIGHT/2);
+
+        // Clamp camera position to map boundaries with proper padding
+        const clampedCameraX = Math.max(0, Math.min(targetCameraX, MAP_DIMENSIONS.width - VIEWPORT_WIDTH));
+        const clampedCameraY = Math.max(0, Math.min(targetCameraY, MAP_DIMENSIONS.height - VIEWPORT_HEIGHT));
+
+        setCameraPosition({ x: clampedCameraX, y: clampedCameraY });
+        
+        setDirection(newDirection);
+        const newMovement = canSprint && (isShiftPressed.current || isRunToggled) ? 'run' : 'walk';
+        setMovement(newMovement);
+        }
+      } else if (movement !== 'idle') {
+        setMovement('idle');
+      }
+
+      // Check location after position update
+      if (newX !== originalX || newY !== originalY) {
+        const location = locationManager.checkLocation(newX, newY);
+        if (location !== currentLocation) {
+          setCurrentLocation(location);
+        }
+      }
+
+      accumulator.current -= FIXED_TIMESTEP;
+    }
+
+    gameLoopId.current = requestAnimationFrame(gameLoop);
+  }, [position, direction, movement, currentStamina, isSprintCooldown, isRunToggled, selectedCharacter?.stats?.speed, isPaused, showMap, currentLocation]);
+
+  // Main game loop effect
   useEffect(() => {
-    setIsRunning(isShiftPressed.current || isRunToggled);
-  }, [isShiftPressed.current, isRunToggled]);
+    if (!isPaused && !showMap) {
+      gameLoopId.current = requestAnimationFrame(gameLoop);
+    }
 
-  // Handle stamina regeneration and drain
+    return () => {
+      if (gameLoopId.current) {
+        cancelAnimationFrame(gameLoopId.current);
+        gameLoopId.current = null;
+      }
+    };
+  }, [gameLoop, isPaused, showMap]);
+
+  // Handle visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        lastFrameTimeRef.current = null;
+        if (gameLoopId.current) {
+          cancelAnimationFrame(gameLoopId.current);
+          gameLoopId.current = null;
+        }
+      } else if (!isPaused && !showMap) {
+        gameLoopId.current = requestAnimationFrame(gameLoop);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gameLoop, isPaused, showMap]);
+
+  // Modify stamina handling
   useEffect(() => {
     if (staminaTimer.current) {
       clearInterval(staminaTimer.current);
     }
 
     staminaTimer.current = setInterval(() => {
-      if (movement === 'run' && (isShiftPressed.current || isRunToggled)) {
+      if (movement === 'run' && currentStamina > 0) {
         // Drain stamina while sprinting
         setCurrentStamina(prev => {
           const newStamina = Math.max(0, prev - STAMINA_DRAIN_RATE / 10);
-          if (newStamina === 0) {
-            // Force walk if stamina is depleted
+          if (newStamina <= STAMINA_THRESHOLD) {
+            // Force walk and trigger cooldown when stamina is too low
+            setIsRunning(false);
             setIsRunToggled(false);
+            setMovement('walk');
+            setIsSprintCooldown(true);
           }
           return newStamina;
         });
-      } else {
+      } else if (movement !== 'run') {
         // Regenerate stamina when not sprinting
         setCurrentStamina(prev => Math.min(characterStats.stamina, prev + STAMINA_REGEN_RATE / 10));
       }
-    }, 100); // Update every 100ms for smooth transitions
+    }, 100);
 
     return () => {
       if (staminaTimer.current) {
         clearInterval(staminaTimer.current);
       }
     };
-  }, [movement, isRunToggled, characterStats.stamina]);
+  }, [movement, characterStats.stamina]);
 
   // Handle hunger decrease
   useEffect(() => {
@@ -1269,84 +2453,16 @@ const World = () => {
     };
   }, []);
 
-  // Update current stats when character stats change
+  // Add useEffect to update currentStats when equipment changes
   useEffect(() => {
-    setCurrentStats(characterStats);
-    setCurrentStamina(characterStats.stamina);
-    setCurrentHunger(characterStats.hunger);
-  }, [characterStats]);
-
-  // Modify the existing game loop to check stamina before allowing sprint
-  useEffect(() => {
-    let lastFrameTime = 0;
-    let animationFrameId;
-
-    const gameLoop = (timestamp) => {
-      if (isPaused) {
-        return;
-      }
-
-      if (!lastFrameTime) lastFrameTime = timestamp;
-      const deltaTime = timestamp - lastFrameTime;
-      
-      if (deltaTime >= 16.67) {
-        const keys = keysPressed.current;
-        let newX = position.x;
-        let newY = position.y;
-        let newDirection = direction;
-        let isMoving = false;
-        
-        // Only allow sprint if there's enough stamina
-        const canSprint = currentStamina > 0;
-        const speed = (canSprint && (isShiftPressed.current || isRunToggled)) ? 
-          BASE_MOVEMENT_SPEED * 1.6 : BASE_MOVEMENT_SPEED;
-
-        if (keys['w'] || keys['arrowup']) {
-          newY -= speed;
-          newDirection = 'up';
-          isMoving = true;
-        }
-        if (keys['s'] || keys['arrowdown']) {
-          newY += speed;
-          newDirection = 'down';
-          isMoving = true;
-        }
-        if (keys['a'] || keys['arrowleft']) {
-          newX -= speed;
-          newDirection = 'left';
-          isMoving = true;
-        }
-        if (keys['d'] || keys['arrowright']) {
-          newX += speed;
-          newDirection = 'right';
-          isMoving = true;
-        }
-
-        setPosition({ x: newX, y: newY });
-        setDirection(newDirection);
-        
-        // Update movement state based on stamina availability
-        setMovement(isMoving ? 
-          (canSprint && (isShiftPressed.current || isRunToggled) ? 'run' : 'walk') 
-          : 'idle'
-        );
-        
-        lastFrameTime = timestamp;
-      }
-      
-      animationFrameId = requestAnimationFrame(gameLoop);
-    };
-
-    if (!isPaused) {
-      animationFrameId = requestAnimationFrame(gameLoop);
-    }
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [direction, position, isRunToggled, isPaused, currentStamina]);
+    setCurrentStats({
+      ...baseStats,
+      damage: baseStats.damage + equipmentBonuses.damage,
+      defense: baseStats.defense + equipmentBonuses.defense,
+      hp: baseStats.hp + equipmentBonuses.hp,
+      maxHp: baseStats.maxHp + equipmentBonuses.maxHp
+    });
+  }, [baseStats, equipmentBonuses]);
 
   // Calculate and update map dimensions
   useEffect(() => {
@@ -1389,178 +2505,1138 @@ const World = () => {
 
   // Function to handle inventory slot click
   const handleSlotClick = (section, index) => {
-    console.log(`Clicked ${section} slot ${index}`);
-    // Add item handling logic here
+    if (section === 'armor') {
+      const slotName = getSlotNameFromIndex(index);
+      if (equipmentSlots[slotName]) {
+        handleUnequipItem(slotName);
+      }
+    } else if (section === 'main') {
+      const item = inventory.main[index];
+      if (item) {
+        setSelectedItem(selectedItem === item ? null : item);
+      }
+    }
   };
 
-  // Add game time effect
+  // Modify game time effect for day/night cycle (5 minutes each)
   useEffect(() => {
-    if (gameTimeRef.current) {
-      clearInterval(gameTimeRef.current);
-    }
-
-    // Update game time every 3 seconds (1 in-game minute)
-    gameTimeRef.current = setInterval(() => {
-      if (!isPaused) {
-        setGameTime(prevTime => {
-          const newMinutes = prevTime.minutes + 1;
-          if (newMinutes >= 60) {
-            const newHours = (prevTime.hours + 1) % 24;
-            return { hours: newHours, minutes: 0 };
+    const updateGameTime = () => {
+      setGameTime(prevTime => {
+        let newHours = prevTime.hours;
+        let newMinutes = prevTime.minutes + 1;
+        
+        if (newMinutes >= 60) {
+          newMinutes = 0;
+          newHours = (newHours + 1) % 24;
+          
+          // Only check for night time when hour changes
+          const isNightTime = newHours >= 18 || newHours < 6;
+          if (isNightTime !== isNight) {
+            setIsNight(isNightTime);
           }
-          return { ...prevTime, minutes: newMinutes };
-        });
-      }
-    }, 3000); // 3 seconds real time = 1 minute game time
+        }
+        
+        return { hours: newHours, minutes: newMinutes };
+      });
+    };
+
+    if (!isPaused && !showMap) {
+      gameTimeRef.current = setInterval(updateGameTime, 1000);
+    }
 
     return () => {
       if (gameTimeRef.current) {
         clearInterval(gameTimeRef.current);
       }
     };
-  }, [isPaused]);
+  }, [isPaused, showMap, isNight]);
 
   // Add effect to handle day/night transition
   useEffect(() => {
-    const checkDayNight = () => {
-      const isNightTime = gameTime.hours >= 18 || gameTime.hours < 6;
-      setIsNight(isNightTime);
+    const isNightTime = gameTime.hours >= 18 || gameTime.hours < 6;
+    setIsNight(isNightTime);
+    console.log('Time changed:', gameTime.hours + ':' + gameTime.minutes, 'Is night:', isNightTime);
+  }, [gameTime]);
+
+  // Add cooldown progress effect
+  useEffect(() => {
+    if (isSprintCooldown) {
+      const startTime = Date.now();
+      const updateProgress = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = (elapsed / SPRINT_COOLDOWN) * 100;
+        
+        if (progress >= 100) {
+          setIsSprintCooldown(false);
+          setCooldownProgress(0);
+          if (cooldownTimer.current) {
+            clearInterval(cooldownTimer.current);
+          }
+        } else {
+          setCooldownProgress(progress);
+        }
+      };
+      
+      cooldownTimer.current = setInterval(updateProgress, 50);
+      return () => {
+        if (cooldownTimer.current) {
+          clearInterval(cooldownTimer.current);
+        }
+      };
+    }
+  }, [isSprintCooldown]);
+
+  const handleDPadPress = (direction) => {
+    // Set the corresponding key in keysPressed
+    const directionMap = {
+      'up': 'w',
+      'down': 's',
+      'left': 'a',
+      'right': 'd'
     };
     
-    checkDayNight();
-  }, [gameTime.hours]);
+    if (directionMap[direction]) {
+      keysPressed.current[directionMap[direction]] = true;
+    }
+  };
 
-  if (!selectedCharacter) {
-    return <WorldContainer>Loading...</WorldContainer>;
+  const handleDPadRelease = (direction) => {
+    // Release the corresponding key in keysPressed
+    const directionMap = {
+      'up': 'w',
+      'down': 's',
+      'left': 'a',
+      'right': 'd'
+    };
+    
+    if (directionMap[direction]) {
+      keysPressed.current[directionMap[direction]] = false;
+    }
+  };
+
+  // Add collision map loading
+  useEffect(() => {
+    collisionManager.loadCollisionMap();
+  }, []);
+
+  // Modify the initialization effect
+  useEffect(() => {
+    const initializeGame = async () => {
+      try {
+        setIsLoading(true);
+        // Wait for all managers to load
+        await Promise.all([
+          collisionManager.loadCollisionMap(),
+          spawnManager.loadSpawnPoints(),
+          locationManager.loadLocationMap()
+        ]);
+
+        // Get spawn point and set initial position
+        const spawnPoint = spawnManager.getRandomSpawnPoint();
+        setPosition(spawnPoint);
+        
+        // Set initial map position based on spawn point
+        setMapPosition({
+          x: -(spawnPoint.x - VIEWPORT_WIDTH/2),
+          y: -(spawnPoint.y - VIEWPORT_HEIGHT/2)
+        });
+
+        // Set initial camera position
+        setCameraPosition({
+          x: Math.max(0, Math.min(spawnPoint.x - VIEWPORT_WIDTH/2, MAP_DIMENSIONS.width - VIEWPORT_WIDTH)),
+          y: Math.max(0, Math.min(spawnPoint.y - VIEWPORT_HEIGHT/2, MAP_DIMENSIONS.height - VIEWPORT_HEIGHT))
+        });
+      } catch (error) {
+        console.error('Failed to initialize game:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeGame();
+  }, []);
+
+  // Location-specific visit options
+  const locationOptions = {
+    'Lakers City': {
+      description: 'Kota pelabuhan yang terkenal dengan danau indahnya dan hasil tangkapan ikan yang melimpah.',
+      options: [
+        { 
+          icon: '🏪', 
+          label: 'Lakers General Store', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('lakersGeneral');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🍖', 
+          label: 'Lakeside Food Court', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('lakersFood');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🛏️', 
+          label: 'Lakers Hill Inn', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowLodge(true);
+            setContainerContent('lodge');
+          }
+        },
+        { 
+          icon: '🎣', 
+          label: 'Lakers Fishing Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('lakersFishing');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '💬', 
+          label: 'Talk to Locals', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Selamat datang di Lakers City! Saya adalah nelayan lokal yang sudah lama tinggal di sini.",
+              tips: [
+                "Kota kami terkenal dengan hasil laut dan danau yang melimpah.",
+                "Jangan lupa untuk membeli peralatan memancing di Lakers Fishing Shop.",
+                "Cobalah hidangan khas ikan segar di Lakeside Food Court.",
+                "Anda bisa membeli berbagai kebutuhan di Lakers General Store.",
+                "Lakers Hill Inn menyediakan pemandangan danau yang indah saat beristirahat."
+              ],
+              farewell: "Semoga Anda menikmati kunjungan di kota kami!"
+            });
+          }
+        }
+      ]
+    },
+    'Woodville City': {
+      description: 'A peaceful city in the midst of the dense Redwood forest.',
+      options: [
+        { 
+          icon: '🏹', 
+          label: 'Hunting Equipment Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('hunting');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🪓', 
+          label: 'Woodworking Tools Shop', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('woodworking');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🍖', 
+          label: 'Forest Meat House', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowShop(true);
+            setCurrentShop('food');
+            setContainerContent('shop');
+          }
+        },
+        { 
+          icon: '🛏️', 
+          label: 'Wooden Lodge Inn', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowLodge(true);
+            setContainerContent('lodge');
+          }
+        },
+        { 
+          icon: '🧝‍♂️', 
+          label: 'Meet Elf Advisor', 
+          action: () => {
+            setShowVisitMenu(false);
+            setShowDialog(true);
+            setDialogContent({
+              greeting: "Welcome to Woodville, traveler! I am the Elf Advisor.",
+              tips: [
+                "The Sacred Relics are scattered across Elendor.",
+                "Each location holds its own secrets and challenges.",
+                "Build your strength and gather resources before venturing far.",
+                "The Elven Kingdom awaits those who prove worthy."
+              ],
+              farewell: "May the forest guide your path!"
+            });
+          }
+        }
+      ]
+    },
+    'Managarmr Central City': {
+      description: 'The magnificent capital city of Elendor.',
+      options: [
+        { icon: '⚔️', label: 'Legendary Weapons Shop', action: () => console.log('Open weapon shop') },
+        { icon: '🛡️', label: 'Premium Armor Shop', action: () => console.log('Open armor shop') },
+        { icon: '🏰', label: 'Meeting Hall', action: () => console.log('Enter hall') },
+        { icon: '🏦', label: 'Managarmr Bank', action: () => console.log('Access bank') },
+        { icon: '🍺', label: 'Managarmr Tavern', action: () => console.log('Enter tavern') },
+        { icon: '💬', label: 'City Information', action: () => console.log('Dialog') }
+      ]
+    },
+    'Wheatlived Village': {
+      description: 'A peaceful and productive wheat farming village.',
+      options: [
+        { icon: '🌾', label: 'Wheat Market', action: () => console.log('Open market') },
+        { icon: '🍞', label: 'Bakery Shop', action: () => console.log('Buy bread') },
+        { icon: '🏠', label: 'Farmer\'s Inn', action: () => console.log('Rest') },
+        { icon: '👨‍🌾', label: 'Meet Village Chief', action: () => console.log('Dialog') }
+      ]
+    },
+    'Fishmell Village': {
+      description: 'A fishing village by Lake Lakers rich in seafood.',
+      options: [
+        { icon: '🐟', label: 'Fish Market', action: () => console.log('Open fish market') },
+        { icon: '🎣', label: 'Fishing Equipment Shop', action: () => console.log('Buy fishing gear') },
+        { icon: '🍜', label: 'Fish Soup House', action: () => console.log('Open food court') },
+        { icon: '⛵', label: 'Boat Rental', action: () => console.log('Rent boat') },
+        { icon: '👨‍🦳', label: 'Meet Old Fisherman', action: () => console.log('Dialog') }
+      ]
+    },
+    'Stonedust Castle': {
+      description: 'The mighty military fortress and defense center of Elendor.',
+      options: [
+        { icon: '⚔️', label: 'Training Room', action: () => console.log('Train') },
+        { icon: '🛡️', label: 'Military Armory', action: () => console.log('Open armory') },
+        { icon: '📜', label: 'Military Missions', action: () => console.log('Accept mission') },
+        { icon: '👨‍✈️', label: 'Report to Commander', action: () => console.log('Dialog') }
+      ]
+    },
+    'Beautiful Harbor': {
+      description: 'A busy port serving as Elendor\'s trade center.',
+      options: [
+        { icon: '🏪', label: 'Import Market', action: () => console.log('Open market') },
+        { icon: '⛵', label: 'Ship Dock', action: () => console.log('View ships') },
+        { icon: '📦', label: 'Warehouse', action: () => console.log('Open warehouse') },
+        { icon: '🍺', label: 'Sailor\'s Tavern', action: () => console.log('Enter tavern') },
+        { icon: '👨‍👨‍👦‍👦', label: 'Meet Merchants', action: () => console.log('Dialog') }
+      ]
+    },
+    'Wizard Tower': {
+      description: 'The mysterious tower of magical arts.',
+      options: [
+        { icon: '📚', label: 'Magic Library', action: () => console.log('Open library') },
+        { icon: '🔮', label: 'Potion Shop', action: () => console.log('Buy potions') },
+        { icon: '✨', label: 'Learn Magic', action: () => console.log('Learn') },
+        { icon: '🧙‍♂️', label: 'Meet Archmage', action: () => console.log('Dialog') }
+      ]
+    },
+    'Stronghold Maul': {
+      description: 'A fortress fallen to monsters and dark creatures.',
+      options: [
+        { icon: '⚔️', label: 'Challenge Monsters', action: () => console.log('Start battle') },
+        { icon: '🗝️', label: 'Explore Rooms', action: () => console.log('Explore') },
+        { icon: '💀', label: 'Investigate Area', action: () => console.log('Investigate') }
+      ]
+    },
+    'Dwarf Kingdom': {
+      description: 'The ruins of the ancient Dwarf Kingdom.',
+      options: [
+        { icon: '⛏️', label: 'Old Mine', action: () => console.log('Explore mine') },
+        { icon: '🏺', label: 'Search Artifacts', action: () => console.log('Search artifacts') },
+        { icon: '🗝️', label: 'Explore Ruins', action: () => console.log('Explore') },
+        { icon: '👻', label: 'Meet Dark Dwarf', action: () => console.log('Dialog') }
+      ]
+    },
+    'Elven Kingdom': {
+      description: 'The mysterious Elven Kingdom guarding the 8 sacred relics.',
+      options: [
+        { icon: '🏰', label: 'Enter Palace', disabled: true, action: () => console.log('Enter palace') },
+        { icon: '📜', label: 'Ask About Relics', action: () => console.log('Relic dialog') },
+        { icon: '✨', label: 'Present Relics', 
+          disabled: !obtainedRelics.every(relic => relic), 
+          action: () => console.log('Present relics') }
+      ]
+    }
+  };
+
+  // Handle visit menu interaction
+  const handleInteract = () => {
+    if (currentLocation && !showVisitMenu) {
+      setShowVisitMenu(true);
+      setShowContainerShown(true);
+      setContainerContent('visit');
+    }
+  };
+
+  // Add loading screen
+  if (isLoading || !position || !selectedCharacter) {
+    return (
+      <WorldContainer>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          color: '#ffd700',
+          fontSize: '24px',
+          textShadow: '2px 2px 4px rgba(0, 0, 0, 0.5)',
+          background: '#2c1810'
+        }}>
+          Loading...
+        </div>
+      </WorldContainer>
+    );
   }
 
+  // Add shop items
+  const shopItems = {
+    lakersGeneral: [
+      {
+        id: 'leatherHelm',
+        name: 'Leather Cap',
+        icon: '🪖',
+        type: 'helmet',
+        price: 80,
+        durability: 100,
+        stats: {
+          defense: 3,
+          hp: 8
+        }
+      },
+      {
+        id: 'leatherArmor',
+        name: 'Leather Vest',
+        icon: '🦺',
+        type: 'armor',
+        price: 150,
+        durability: 100,
+        stats: {
+          defense: 7,
+          hp: 15
+        }
+      },
+      {
+        id: 'waterBoots',
+        name: 'Water Boots',
+        icon: '👢',
+        type: 'armor',
+        price: 100,
+        durability: 100,
+        stats: {
+          defense: 4,
+          hp: 5,
+          speed: 1
+        }
+      }
+    ],
+    lakersFood: [
+      {
+        id: 'grilledCarp',
+        name: 'Grilled Carp',
+        icon: '🐟',
+        type: 'food',
+        price: 30,
+        stats: { 
+          hunger: 40,
+          hp: 12
+        }
+      },
+      {
+        id: 'fishStew',
+        name: 'Lakers Fish Stew',
+        icon: '🥘',
+        type: 'food',
+        price: 45,
+        stats: {
+          hunger: 55,
+          hp: 18
+        }
+      },
+      {
+        id: 'seaweedSoup',
+        name: 'Seaweed Soup',
+        icon: '🍜',
+        type: 'food',
+        stats: {
+          hunger: 45,
+          hp: 15,
+          damage: 10,
+          speed: 1
+        }
+      }
+    ],
+    woodworking: [
+      { 
+        id: 'axe1', 
+        name: 'Steel Axe', 
+        icon: '🪓',
+        type: 'weapon', 
+        price: 150, 
+        stats: { 
+          damage: 7 
+        } 
+      },
+      { 
+        id: 'shield1', 
+        name: 'Wooden Shield', 
+        icon: '🛡️',
+        type: 'shield', 
+        price: 120, 
+        stats: { 
+          defense: 5 
+        } 
+      }
+    ],
+    lakersFishing: [
+      {
+        id: 'bambooRod',
+        name: 'Bamboo Fishing Rod',
+        icon: '🎣',
+        type: 'weapon',
+        price: 90,
+        durability: 100,
+        stats: {
+          damage: 4,
+          speed: 1
+        }
+      },
+      {
+        id: 'harpoon',
+        name: 'Fishing Harpoon',
+        icon: '🔱',
+        type: 'weapon',
+        price: 140,
+        durability: 100,
+        stats: {
+          damage: 8
+        }
+      },
+      {
+        id: 'fishNet',
+        name: 'Large Fishing Net',
+        icon: '🕸️',
+        type: 'weapon',
+        price: 160,
+        durability: 100,
+        stats: {
+          damage: 6,
+          speed: 2
+        }
+      }
+    ],
+    hunting: [
+      {
+        id: 'bow',
+        name: 'Longbow',
+        icon: '🏹',
+        type: 'weapon',
+        price: 100,
+        durability: 100,
+        stats: {
+          damage: 5,
+          speed: 1
+        }
+      },
+      {
+        id: 'quiver',
+        name: 'Quiver of Arrows',
+        icon: '🏹',
+        type: 'weapon',
+        price: 50,
+        durability: 100,
+        stats: {
+          damage: 2,
+          speed: 1
+        }
+      },
+      {
+        id: 'huntingKnife',
+        name: 'Hunting Knife',
+        icon: '🔪',
+        type: 'weapon',
+        price: 70,
+        durability: 100,
+        stats: {
+          damage: 3,
+          speed: 1
+        }
+      }
+    ],
+    food: [
+      {
+        id: 'venison',
+        name: 'Venison Steak',
+        icon: '🥩',
+        type: 'food',
+        price: 40,
+        stats: {
+          hunger: 50,
+          hp: 20
+        }
+      },
+      {
+        id: 'wildBoar',
+        name: 'Wild Boar Roast',
+        icon: '🍖',
+        type: 'food',
+        price: 35,
+        stats: {
+          hunger: 45,
+          hp: 18,
+          damage: 5
+        }
+      },
+      {
+        id: 'rabbitStew',
+        name: 'Rabbit Stew',
+        icon: '🥘',
+        type: 'food',
+        price: 25,
+        stats: {
+          hunger: 35,
+          hp: 15,
+          speed: 1
+        }
+      },
+      {
+        id: 'berryPie',
+        name: 'Forest Berry Pie',
+        icon: '🥧',
+        type: 'food',
+        price: 20,
+        stats: {
+          hunger: 30,
+          hp: 12,
+          stamina: 20
+        }
+      }
+    ]
+  };
+
+  // Add function to handle buying items
+  const handleBuyItem = async (item) => {
+    try {
+      console.log('Attempting to buy item:', item);
+      console.log('Current inventory:', inventory);
+      console.log('Current gold:', playerGold);
+
+      // Set purchase in progress
+      setPurchaseInProgress(true);
+      setPurchaseMessage('Processing purchase...');
+
+      if (playerGold < item.price) {
+        setPurchaseMessage('Not enough gold!');
+        setTimeout(() => setPurchaseMessage(''), 2000);
+        return;
+      }
+
+      // Find first empty slot in main inventory
+      const emptySlotIndex = inventory.main.findIndex(slot => !slot.id);
+      console.log('Empty slot found at:', emptySlotIndex);
+
+      if (emptySlotIndex === -1) {
+        setPurchaseMessage('Inventory is full!');
+        setTimeout(() => setPurchaseMessage(''), 2000);
+        return;
+      }
+
+      // Create new inventory object
+      const newInventory = {
+        ...inventory,
+        main: [...inventory.main]
+      };
+      
+      // Add item to inventory
+      newInventory.main[emptySlotIndex] = {
+        id: `${item.id}_${Date.now()}`,
+        name: item.name,
+        icon: item.icon,
+        type: item.type,
+        durability: item.durability || 100,
+        stats: item.stats || {},
+        count: 1
+      };
+      
+      console.log('New inventory:', newInventory);
+      
+      // Update state with a small delay to show animation
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Update state
+      setInventory(newInventory);
+      setPlayerGold(prevGold => {
+        const newGold = prevGold - item.price;
+        console.log('Updating gold from', prevGold, 'to', newGold);
+        return newGold;
+      });
+
+      setPurchaseMessage('Purchase successful!');
+      setTimeout(() => {
+        setPurchaseMessage('');
+        // Close shop
+        setShowShop(false);
+        setShowVisitMenu(true);
+        setContainerContent('visit');
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error during purchase:', error);
+      setPurchaseMessage('Purchase failed!');
+      setTimeout(() => setPurchaseMessage(''), 2000);
+    } finally {
+      setPurchaseInProgress(false);
+    }
+  };
+
+  // Add function to handle resting at lodge
+  const handleRest = () => {
+    if (playerGold >= 50) {
+      setPurchaseMessage('Character is going to sleep...');
+      
+      setTimeout(() => {
+        setPlayerGold(prev => prev - 50);
+        setCurrentStats(prev => ({ ...prev, hp: 100 }));
+        setCurrentStamina(100);
+        setCurrentHunger(100);
+        
+        // Add 6 hours to game time
+        setGameTime(prevTime => {
+          let newHours = (prevTime.hours + 6) % 24;
+          return {
+            hours: newHours,
+            minutes: prevTime.minutes
+          };
+        });
+
+        // Update time of day based on new hours
+        setTimeOfDay(prevTime => {
+          const newHours = (prevTime.hours + 6) % 24;
+          return (newHours >= 18 || newHours < 6) ? 'night' : 'day';
+        });
+        
+        // Show completion message with formatted time
+        const newHours = (gameTime.hours + 6) % 24;
+        const timeString = `${String(newHours).padStart(2, '0')}:${String(gameTime.minutes).padStart(2, '0')}`;
+        setPurchaseMessage(`Rest complete. Time is now ${timeString}`);
+        
+        // Clear message after 2 seconds
+        setTimeout(() => {
+          setPurchaseMessage('');
+          setShowLodge(false);
+          setShowVisitMenu(true);
+          setContainerContent('visit');
+        }, 2000);
+      }, 1500);
+    } else {
+      setPurchaseMessage('Not enough gold to rest!');
+      setTimeout(() => setPurchaseMessage(''), 2000);
+    }
+  };
+
+  // Add to the JSX return
   return (
     <WorldContainer>
       <Header>Elendor - {playerName}</Header>
       <GameArea>
+        <LocationNotification $show={currentLocation !== null}>
+          {currentLocation}
+        </LocationNotification>
+        
         <MapFrame>
-          <ToggleButton 
-            className={isMarkingMode ? 'active' : ''} 
-            onClick={() => setIsMarkingMode(!isMarkingMode)}
-          >
-            {isMarkingMode ? 'Finish Marking' : 'Mark Locations'}
-          </ToggleButton>
-
-          <ExportButton 
-            show={isMarkingMode}
-            onClick={exportMarkers}
-          >
-            Export Locations
-          </ExportButton>
-
-          <ClearButton
-            show={isMarkingMode && markers.length > 0}
-            onClick={clearAllMarkers}
-          >
-            Clear All Markers
-          </ClearButton>
-
-          {isMarkingMode && (
-            <MarkerTools>
-              <ToolSection>
-                <ToolLabel>Location Type</ToolLabel>
-                <Select 
-                  value={selectedMarkerType}
-                  onChange={(e) => setSelectedMarkerType(e.target.value)}
-                >
-                  {Object.entries(markerTypes).map(([value, { label }]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </Select>
-              </ToolSection>
-
-              <ToolSection>
-                <ToolLabel>Location Name</ToolLabel>
-                <Input
-                  type="text"
-                  value={markerName}
-                  onChange={(e) => setMarkerName(e.target.value)}
-                  placeholder="Enter location name"
-                />
-              </ToolSection>
-
-              <ToolSection>
-                <ToolLabel>Area Shape</ToolLabel>
-                <Select
-                  value={markerShape}
-                  onChange={(e) => setMarkerShape(e.target.value)}
-                >
-                  <option value="circle">Circle</option>
-                  <option value="square">Square</option>
-                  <option value="rounded">Rounded Square</option>
-                </Select>
-              </ToolSection>
-
-              <ToolSection>
-                <ToolLabel>Area Size</ToolLabel>
-                <Input
-                  type="range"
-                  min="16"
-                  max="128"
-                  value={markerSize}
-                  onChange={(e) => setMarkerSize(Number(e.target.value))}
-                />
-                <SizeDisplay>{markerSize}px</SizeDisplay>
-              </ToolSection>
-
-              <div style={{ color: '#ffd700', fontSize: '12px', marginTop: '10px' }}>
-                • Click marker to remove it
-              </div>
-              <div style={{ color: '#ffd700', fontSize: '12px' }}>
-                • Use 'Clear All Markers' to remove everything
-              </div>
-            </MarkerTools>
-          )}
-
-          <MapContainer 
-            ref={mapContainerRef}
-            onMouseMove={handleMouseMove}
-            onClick={handleMapClick}
-          >
-            <Map style={{ backgroundImage: `url('/assets/map/Elendor.png')` }}>
-              <DayNightOverlay 
-                isNight={isNight}
-                style={{ backgroundImage: `url('/assets/map/ElendorNight.png')` }}
-              />
-              <Character
-                ref={characterRef}
-                x={position.x}
-                y={position.y}
-                style={{
-                  backgroundImage: `url("${getCharacterSprite()}")`,
-                }}
-              />
-              
-              {markers.map(marker => (
-                <LocationMarker
-                  key={marker.id}
-                  style={{
-                    left: marker.x,
-                    top: marker.y,
-                    background: `${markerTypes[marker.type].color}40`,
-                    borderColor: markerTypes[marker.type].color
-                  }}
-                  size={marker.size || 32}
-                  shape={marker.shape || 'circle'}
-                  label={marker.name}
-                  onClick={() => isMarkingMode && removeMarker(marker.id)}
-                />
-              ))}
-
-              {isMarkingMode && (
-                <CoordinateDisplay>
-                  X: {mousePos.x}, Y: {mousePos.y}
-                </CoordinateDisplay>
-              )}
-            </Map>
-          </MapContainer>
+          <GameplayContainer>
+            <ViewportContainer>
+              <ViewportFrame>
+                <MapContainer>
+                  <Map 
+                    $cameraX={cameraPosition.x}
+                    $cameraY={cameraPosition.y}
+                    style={{
+                      backgroundImage: `url('/assets/map/Elendor.png')`
+                    }}
+                  >
+                    <DayNightOverlay 
+                      $isNight={isNight}
+                      style={{ backgroundImage: `url('/assets/map/ElendorNight.png')` }}
+                    />
+                    {position && (
+                    <Character
+                      ref={characterRef}
+                      x={position.x}
+                      y={position.y}
+                      style={{
+                        backgroundImage: `url("${getCharacterSprite()}")`,
+                      }}
+                    />
+                    )}
+                    {showDebug && position && (
+                      <CollisionDebugBox
+                        x={position.x + COLLISION_OFFSET.x}
+                        y={position.y + COLLISION_OFFSET.y}
+                      />
+                    )}
+                  </Map>
+                </MapContainer>
+              </ViewportFrame>
+            </ViewportContainer>
+          </GameplayContainer>
         </MapFrame>
         
+        <ContainerShown $isVisible={showContainerShown}>
+          {showInventory && (
+            <MenuPanel 
+              $isVisible={showInventory} 
+              $isStacked={showDetailedStats || showVisitMenu || showShop || showLodge || showDialog}
+              style={{ order: containerContent === 'inventory' ? 0 : 1 }}
+            >
+              <CloseButton onClick={() => {
+                setShowInventory(false);
+                if (!showDetailedStats && !showVisitMenu) setShowContainerShown(false);
+              }}>×</CloseButton>
+              <InventoryTitle>Inventory</InventoryTitle>
+              
+              <ArmorAndPlayerSection>
+                <ArmorGrid>
+                  {Object.entries(equipmentSlots).map(([slotName, item], index) => (
+                    <InventorySlot 
+                      key={`armor-${index}`}
+                      onClick={() => handleSlotClick('armor', index)}
+                    >
+                      {item && (
+                        <>
+                          <span style={{ fontSize: '24px' }}>{item.icon}</span>
+                          {item.durability < 100 && (
+                            <DurabilityBar $durability={item.durability} />
+                          )}
+                          <ItemTooltip>
+                            {item.name}
+                            {item.durability < 100 && ` (${item.durability}%)`}
+                            {item.stats && Object.entries(item.stats).map(([stat, value]) => {
+                              let displayStat = stat;
+                              switch(stat) {
+                                case 'damage':
+                                  displayStat = 'Damage';
+                                  break;
+                                case 'defense':
+                                  displayStat = 'Defense';
+                                  break;
+                                case 'hp':
+                                  displayStat = 'HP';
+                                  break;
+                                default:
+                                  displayStat = stat.charAt(0).toUpperCase() + stat.slice(1);
+                              }
+                              return <div key={stat}>{displayStat}: +{value}</div>;
+                            })}
+                          </ItemTooltip>
+                        </>
+                      )}
+                    </InventorySlot>
+                  ))}
+                </ArmorGrid>
+
+                <PlayerPreview>
+                  <img src={getCharacterSprite()} alt="Player" />
+                </PlayerPreview>
+              </ArmorAndPlayerSection>
+
+              <InventoryGrid>
+                {inventory.main.map((item, index) => (
+                  <InventorySlot 
+                    key={`main-${index}`}
+                    onClick={() => handleSlotClick('main', index)}
+                  >
+                    {item && (
+                      <>
+                        <span style={{ fontSize: '24px' }}>{item.icon}</span>
+                        {item.count > 1 && <ItemCount>{item.count}</ItemCount>}
+                        {item.durability < 100 && (
+                          <DurabilityBar $durability={item.durability} />
+                        )}
+                        <ItemTooltip>
+                          {item.name}
+                          {item.durability < 100 && ` (${item.durability}%)`}
+                          {item.stats && Object.entries(item.stats).map(([stat, value]) => {
+                            let displayStat = stat;
+                            switch(stat) {
+                              case 'damage':
+                                displayStat = 'Damage';
+                                break;
+                              case 'defense':
+                                displayStat = 'Defense';
+                                break;
+                              case 'hp':
+                                displayStat = 'HP';
+                                break;
+                              default:
+                                displayStat = stat.charAt(0).toUpperCase() + stat.slice(1);
+                            }
+                            return <div key={stat}>{displayStat}: +{value}</div>;
+                          })}
+                        </ItemTooltip>
+                        {selectedItem === item && (
+                          <ItemPopup>
+                            {Object.keys(equipmentSlots).map(slotName => (
+                              canEquipInSlot(item, slotName) && (
+                                <PopupButton 
+                                  key={slotName}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEquipItem(item, slotName);
+                                  }}
+                                >
+                                  Equip as {slotName}
+                                </PopupButton>
+                              )
+                            ))}
+                            <PopupButton 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDiscardItem(item);
+                              }}
+                              style={{ color: '#ff4444' }}
+                            >
+                              Discard
+                            </PopupButton>
+                          </ItemPopup>
+                        )}
+                      </>
+                    )}
+                  </InventorySlot>
+                ))}
+              </InventoryGrid>
+            </MenuPanel>
+          )}
+          
+          {showDetailedStats && (
+            <MenuPanel 
+              $isVisible={showDetailedStats} 
+              $isStacked={showInventory || showVisitMenu || showShop || showLodge || showDialog}
+              style={{ order: containerContent === 'stats' ? 0 : 1 }}
+            >
+              <CloseButton onClick={() => {
+                setShowDetailedStats(false);
+                if (!showInventory && !showVisitMenu) setShowContainerShown(false);
+              }}>×</CloseButton>
+
+              <CharacterHeader>
+                <CharacterTitle>{playerName}</CharacterTitle>
+                <CharacterSubtitle>{selectedCharacter.name} Class</CharacterSubtitle>
+              </CharacterHeader>
+
+              <RelicSection>
+                <RelicTitle>Sacred Relics</RelicTitle>
+                <RelicContainer>
+                  {obtainedRelics.map((obtained, index) => (
+                    <RelicBox 
+                      key={index} 
+                      $obtained={obtained}
+                      title={`Relic ${index + 1}`}
+                    />
+                  ))}
+                </RelicContainer>
+              </RelicSection>
+
+              <CharacterStatsSection>
+              <StatRow>
+                  <StatLabel>HP</StatLabel>
+                  <StatValue>{currentStats.hp}/{currentStats.maxHp}</StatValue>
+              </StatRow>
+              
+              <StatRow>
+                  <StatLabel>Hunger</StatLabel>
+                  <StatValue>{currentHunger}/100</StatValue>
+              </StatRow>
+              
+              <StatRow>
+                  <StatLabel>Stamina</StatLabel>
+                  <StatValue>{currentStamina}/100</StatValue>
+              </StatRow>
+
+                <StatRow>
+                  <StatLabel>Speed</StatLabel>
+                  <StatValue>
+                    {selectedCharacter.stats.speed === 2.5 ? 'Fast' : 'Normal'}
+                  </StatValue>
+                </StatRow>
+
+                <StatRow>
+                  <StatLabel>Damage</StatLabel>
+                  <StatValue>{currentStats.damage}</StatValue>
+                </StatRow>
+
+                <StatRow>
+                  <StatLabel>Defense</StatLabel>
+                  <StatValue>{currentStats.defense}</StatValue>
+                </StatRow>
+
+                <StatRow>
+                  <StatLabel>Gold</StatLabel>
+                  <StatValue>{playerGold} G</StatValue>
+                </StatRow>
+              </CharacterStatsSection>
+            </MenuPanel>
+          )}
+
+          {showVisitMenu && currentLocation && (
+            <MenuPanel 
+              $isVisible={showVisitMenu} 
+              $isStacked={showInventory || showDetailedStats || showShop || showLodge || showDialog}
+              style={{ 
+                order: containerContent === 'visit' ? 0 : 1,
+                pointerEvents: 'auto',
+                zIndex: containerContent === 'visit' ? 2 : 1
+              }}
+            >
+              <CloseButton onClick={() => {
+                setShowVisitMenu(false);
+                if (!showInventory && !showDetailedStats) setShowContainerShown(false);
+              }}>×</CloseButton>
+              <VisitMenuTitle>{currentLocation}</VisitMenuTitle>
+              <VisitMenuDescription>
+                {locationOptions[currentLocation]?.description}
+              </VisitMenuDescription>
+              <VisitOptionList>
+                {locationOptions[currentLocation]?.options.map((option, index) => (
+                  <VisitOption
+                    key={index}
+                    onClick={option.action}
+                    disabled={option.disabled}
+                  >
+                    <VisitOptionIcon>{option.icon}</VisitOptionIcon>
+                    {option.label}
+                  </VisitOption>
+                ))}
+              </VisitOptionList>
+            </MenuPanel>
+          )}
+
+          {showShop && (
+            <MenuPanel 
+              $isVisible={showShop} 
+              $isStacked={showInventory || showDetailedStats || showVisitMenu || showLodge || showDialog}
+              style={{ 
+                order: containerContent === 'shop' ? 0 : 1,
+                pointerEvents: 'auto',
+                zIndex: containerContent === 'shop' ? 2 : 1
+              }}
+            >
+              <CloseButton onClick={() => {
+                setShowShop(false);
+                setShowVisitMenu(true);
+                setContainerContent('visit');
+              }}>×</CloseButton>
+              <VisitMenuTitle>
+                {currentShop === 'hunting' && "Weapons Shop"}
+                {currentShop === 'woodworking' && "Woodworking Tools Shop"}
+                {currentShop === 'food' && "Forest Meat House"}
+              </VisitMenuTitle>
+              {purchaseMessage && (
+                <div style={{
+                  padding: '10px',
+                  margin: '10px',
+                  textAlign: 'center',
+                  color: purchaseMessage.includes('successful') ? '#4CAF50' : '#f44336',
+                  backgroundColor: 'rgba(0,0,0,0.5)',
+                  borderRadius: '5px'
+                }}>
+                  {purchaseMessage}
+                </div>
+              )}
+              <VisitOptionList>
+                {shopItems[currentShop]?.map((item, index) => (
+                  <VisitOption
+                    key={index}
+                    onClick={() => !purchaseInProgress && handleBuyItem(item)}
+                    disabled={playerGold < item.price || purchaseInProgress}
+                    style={{
+                      opacity: purchaseInProgress ? 0.5 : 1,
+                      cursor: purchaseInProgress ? 'not-allowed' : playerGold < item.price ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <VisitOptionIcon>🏷️</VisitOptionIcon>
+                    {item.name} - {item.price}G
+                    {item.stats && (
+                      <span style={{ marginLeft: '10px', fontSize: '0.8em', color: '#aaa' }}>
+                        {Object.entries(item.stats).map(([stat, value]) => `${stat}: +${value}`).join(', ')}
+                      </span>
+                    )}
+                  </VisitOption>
+                ))}
+              </VisitOptionList>
+            </MenuPanel>
+          )}
+
+          {showLodge && (
+            <MenuPanel 
+              $isVisible={showLodge} 
+              $isStacked={showInventory || showDetailedStats || showVisitMenu || showShop || showDialog}
+              style={{ 
+                order: containerContent === 'lodge' ? 0 : 1,
+                pointerEvents: 'auto',
+                zIndex: containerContent === 'lodge' ? 2 : 1
+              }}
+            >
+              <CloseButton onClick={() => {
+                setShowLodge(false);
+                setShowVisitMenu(true);
+                setContainerContent('visit');
+              }}>×</CloseButton>
+              <VisitMenuTitle>Wooden Lodge Inn</VisitMenuTitle>
+              <VisitMenuDescription>
+                Rest and recover your health, stamina, and hunger (50G)
+              </VisitMenuDescription>
+              <VisitOption
+                onClick={handleRest}
+                disabled={playerGold < 50}
+              >
+                <VisitOptionIcon>🛏️</VisitOptionIcon>
+                Rest - 50G
+              </VisitOption>
+            </MenuPanel>
+          )}
+
+          {showDialog && (
+            <MenuPanel 
+              $isVisible={showDialog} 
+              $isStacked={showInventory || showDetailedStats || showVisitMenu || showShop || showLodge}
+              style={{ 
+                order: containerContent === 'dialog' ? 0 : 1,
+                pointerEvents: 'auto',
+                zIndex: containerContent === 'dialog' ? 2 : 1
+              }}
+            >
+              <CloseButton onClick={() => {
+                setShowDialog(false);
+                setShowVisitMenu(true);
+                setContainerContent('visit');
+              }}>×</CloseButton>
+              <VisitMenuTitle>Elf Advisor</VisitMenuTitle>
+              <VisitMenuDescription>{dialogContent?.greeting}</VisitMenuDescription>
+              <VisitOptionList>
+                {dialogContent?.tips.map((tip, index) => (
+                  <div key={index} style={{ padding: '10px', color: '#d4af37' }}>
+                    {tip}
+                  </div>
+                ))}
+                <div style={{ padding: '10px', color: '#ffd700', fontStyle: 'italic' }}>
+                  {dialogContent?.farewell}
+                </div>
+              </VisitOptionList>
+            </MenuPanel>
+          )}
+        </ContainerShown>
+
         <UIContainer>
           <StatsPanel>
             <TimeDisplay>
@@ -1580,147 +3656,113 @@ const World = () => {
             </div>
           </StatsPanel>
 
-          <DetailedStatsPanel show={showDetailedStats}>
-            <CloseStatsButton onClick={() => setShowDetailedStats(false)}>×</CloseStatsButton>
-            <h2 style={{ fontSize: '18px', margin: '0 0 10px 0' }}>Character Stats</h2>
-            
-            <StatRow>
-              <StatLabel>
-                Health Points
-                <span>{Math.round(currentStats.hp)}/100</span>
-              </StatLabel>
-              <StatBar value={(currentStats.hp / 100) * 100} color="#ff4444" />
-            </StatRow>
-            
-            <StatRow>
-              <StatLabel>
-                Stamina
-                <span>{Math.round(currentStamina)}/{characterStats.stamina}</span>
-              </StatLabel>
-              <StatBar value={(currentStamina / characterStats.stamina) * 100} color="#44ff44" />
-            </StatRow>
-            
-            <StatRow>
-              <StatLabel>
-                Hunger
-                <span>{Math.round(currentHunger)}/100</span>
-              </StatLabel>
-              <StatBar value={(currentHunger / 100) * 100} color="#ffaa44" />
-            </StatRow>
-
-            <EquipmentSection>
-              <EquipmentTitle>Equipment</EquipmentTitle>
-              <EquipmentRow>
-                <span>Weapon</span>
-                <span>{selectedCharacter.weapon || 'None'}</span>
-              </EquipmentRow>
-              <EquipmentRow>
-                <span>Armor</span>
-                <span>{selectedCharacter.armor || 'None'}</span>
-              </EquipmentRow>
-            </EquipmentSection>
-          </DetailedStatsPanel>
-
-          {showInventory && (
-            <InventoryPanel>
-              <InventoryTitle>Inventory</InventoryTitle>
-              
-              <ArmorAndPlayerSection>
-                <ArmorGrid>
-                  {inventory.armor.map((item, index) => (
-                    <InventorySlot 
-                      key={`armor-${index}`}
-                      onClick={() => handleSlotClick('armor', index)}
-                    >
-                      {item && <img src={item.icon} alt={item.name} />}
-                    </InventorySlot>
-                  ))}
-                </ArmorGrid>
-
-                <PlayerPreview>
-                  <img src={getCharacterSprite()} alt="Player" />
-                </PlayerPreview>
-              </ArmorAndPlayerSection>
-
-              <InventoryGrid>
-                {inventory.main.map((item, index) => (
-                  <InventorySlot 
-                    key={`main-${index}`}
-                    onClick={() => handleSlotClick('main', index)}
-                  >
-                    {item && <img src={item.icon} alt={item.name} />}
-                  </InventorySlot>
-                ))}
-              </InventoryGrid>
-            </InventoryPanel>
-          )}
-
           <ControlsPanel>
-            <DPad>
-              <DPadButton disabled />
-              <DPadButton 
-                onTouchStart={() => keysPressed.current['w'] = true} 
-                onTouchEnd={() => keysPressed.current['w'] = false}
+            <MovementDPadContainer>
+              <MovementDPadButton 
+                className="up"
+                onMouseDown={() => handleDPadPress('up')}
+                onMouseUp={() => handleDPadRelease('up')}
+                onMouseLeave={() => handleDPadRelease('up')}
+                onTouchStart={() => handleDPadPress('up')}
+                onTouchEnd={() => handleDPadRelease('up')}
               >
                 ↑
-              </DPadButton>
-              <DPadButton disabled />
-              <DPadButton 
-                onTouchStart={() => keysPressed.current['a'] = true} 
-                onTouchEnd={() => keysPressed.current['a'] = false}
+              </MovementDPadButton>
+              <MovementDPadButton 
+                className="left"
+                onMouseDown={() => handleDPadPress('left')}
+                onMouseUp={() => handleDPadRelease('left')}
+                onMouseLeave={() => handleDPadRelease('left')}
+                onTouchStart={() => handleDPadPress('left')}
+                onTouchEnd={() => handleDPadRelease('left')}
               >
                 ←
-              </DPadButton>
-              <DPadButton disabled />
-              <DPadButton 
-                onTouchStart={() => keysPressed.current['d'] = true} 
-                onTouchEnd={() => keysPressed.current['d'] = false}
+              </MovementDPadButton>
+              <DPadCenter />
+              <MovementDPadButton 
+                className="right"
+                onMouseDown={() => handleDPadPress('right')}
+                onMouseUp={() => handleDPadRelease('right')}
+                onMouseLeave={() => handleDPadRelease('right')}
+                onTouchStart={() => handleDPadPress('right')}
+                onTouchEnd={() => handleDPadRelease('right')}
               >
                 →
-              </DPadButton>
-              <DPadButton disabled />
-              <DPadButton 
-                onTouchStart={() => keysPressed.current['s'] = true} 
-                onTouchEnd={() => keysPressed.current['s'] = false}
+              </MovementDPadButton>
+              <MovementDPadButton 
+                className="down"
+                onMouseDown={() => handleDPadPress('down')}
+                onMouseUp={() => handleDPadRelease('down')}
+                onMouseLeave={() => handleDPadRelease('down')}
+                onTouchStart={() => handleDPadPress('down')}
+                onTouchEnd={() => handleDPadRelease('down')}
               >
                 ↓
-              </DPadButton>
-              <DPadButton disabled />
-            </DPad>
+              </MovementDPadButton>
+            </MovementDPadContainer>
 
             <ActionButtonGrid>
               <ActionButtonWrapper>
-                <ActionButton onClick={() => keysPressed.current['e'] = true}>
+                <ActionButton onClick={() => {
+                  if (currentLocation && !showVisitMenu) {
+                    setShowVisitMenu(true);
+                    setShowContainerShown(true);
+                    setContainerContent('visit');
+                  }
+                }}>
                   E
                 </ActionButton>
                 <ButtonLabel>Interact</ButtonLabel>
               </ActionButtonWrapper>
               <ActionButtonWrapper>
-                <ActionButton onClick={() => setShowInventory(prev => !prev)}>
+                <ActionButton onClick={() => {
+                  setShowContainerShown(true);
+                  if (showInventory) {
+                    setShowInventory(false);
+                    if (!showDetailedStats) setShowContainerShown(false);
+                  } else {
+                    setShowInventory(true);
+                    setContainerContent('inventory');
+                  }
+                }}>
                   I
                 </ActionButton>
                 <ButtonLabel>Inventory {showInventory ? '(ON)' : '(OFF)'}</ButtonLabel>
               </ActionButtonWrapper>
               <ActionButtonWrapper>
-                <ActionButton onClick={() => setShowDetailedStats(prev => !prev)}>
-                  S
+                <ActionButton onClick={() => {
+                  setShowContainerShown(true);
+                  if (showDetailedStats) {
+                    setShowDetailedStats(false);
+                    if (!showInventory) setShowContainerShown(false);
+                  } else {
+                    setShowDetailedStats(true);
+                    setContainerContent('stats');
+                  }
+                }}>
+                  T
                 </ActionButton>
                 <ButtonLabel>Stats {showDetailedStats ? '(ON)' : '(OFF)'}</ButtonLabel>
               </ActionButtonWrapper>
               <ActionButtonWrapper>
-                <ActionButton onClick={() => keysPressed.current['m'] = true}>
+                <ActionButton onClick={() => setShowMap(prev => !prev)}>
                   M
                 </ActionButton>
-                <ButtonLabel>Map</ButtonLabel>
+                <ButtonLabel>Map {showMap ? '(ON)' : '(OFF)'}</ButtonLabel>
               </ActionButtonWrapper>
               <ActionButtonWrapper>
                 <ActionButton 
                   onClick={toggleRun}
                   className={isRunToggled ? 'active' : ''}
+                  disabled={isSprintCooldown || currentStamina <= STAMINA_THRESHOLD}
                 >
                   R
+                  {isSprintCooldown && <CooldownOverlay $progress={100 - cooldownProgress} />}
                 </ActionButton>
-                <ButtonLabel>Run {isRunToggled ? '(ON)' : '(OFF)'}</ButtonLabel>
+                <ButtonLabel>
+                  Run {isRunToggled ? '(ON)' : '(OFF)'}
+                  {isSprintCooldown && ` (${Math.ceil((SPRINT_COOLDOWN - (cooldownProgress / 100 * SPRINT_COOLDOWN)) / 1000)}s)`}
+                </ButtonLabel>
               </ActionButtonWrapper>
               <ActionButtonWrapper>
                 <ActionButton onClick={togglePause}>
@@ -1742,6 +3784,20 @@ const World = () => {
             </PauseMenu>
           </PauseOverlay>
         )}
+
+        <MapOverlay $show={showMap} />
+        <MapPopup $show={showMap}>
+          <CloseMapButton onClick={() => setShowMap(false)}>×</CloseMapButton>
+          <div className="map-container">
+            <img src="/assets/map/ElendorCompass.png" alt="World Map" />
+            {position && (
+            <PlayerLocationMarker 
+              $x={position.x}
+              $y={position.y}
+            />
+            )}
+          </div>
+        </MapPopup>
       </GameArea>
     </WorldContainer>
   );
